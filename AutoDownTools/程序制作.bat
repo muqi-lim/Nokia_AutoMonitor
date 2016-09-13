@@ -1,0 +1,1 @@
+C:\Users\lxute\AppData\Local\Programs\Python\Python35\Scripts\pyinstaller.exe -F -p C:\Users\lxute\AppData\Local\Programs\Python\Python35\Lib\site-packages;C:\Users\lxute\AppData\Local\Programs\Python\Python35\Lib\site-packages\cryptography --upx-dir d -i=D:\python\2_software\icon\Thunderbolt.ico --distpath D:\python\code\AutoDownTools AutoDownTools.py
