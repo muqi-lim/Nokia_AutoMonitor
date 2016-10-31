@@ -4,7 +4,7 @@ block_cipher = None
 
 
 a = Analysis(['AutoMonitor.py'],
-             pathex=['C:\\Users\\lxute\\AppData\\Local\\Programs\\Python\\Python35\\Lib\\site-packages', 'D:\\python\\code\\AutoMonitor'],
+             pathex=[],
              binaries=None,
              datas=None,
              hiddenimports=[],
