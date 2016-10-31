@@ -16,7 +16,7 @@ print("""
 """)  ##
 time.sleep(1)  ##
 exetime = int(time.strftime('%Y%m%d', time.localtime(time.time())))  ##
-if exetime > 20170101:  ##
+if exetime > 20180101:  ##
     print('试用版本已过期，请联系作者！')  ##
     input()  ##
     sys.exit()  ##
