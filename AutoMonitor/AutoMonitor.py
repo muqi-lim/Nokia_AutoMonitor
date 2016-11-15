@@ -7,13 +7,51 @@ import configparser
 import time
 import datetime
 import cx_Oracle
-import prettytable
-import copy
+# import prettytable
+# import copy
 # 邮件模块
 import smtplib
 from email.mime.text import MIMEText
 
-print('author:linxuteng')
+
+##############################################################################
+print("""
+--------------------------------
+    Welcome to use tools!
+    Version : 1.2.0
+    Author : linxuteng
+    E_mail : lxuteng@live.cn
+--------------------------------
+""")
+print('\n')
+exetime = int(time.strftime('%Y%m%d', time.localtime(time.time())))
+if exetime > 20180101:
+    print('\n')
+    print('-' * 64)
+    print('试用版本已过期，请联系作者！')
+    print('-' * 64)
+    print('\n')
+    input()
+    sys.exit()
+
+print('''
+
+update log:
+
+2016-11-14 添加最大用户数检测通报；
+
+''')
+
+print('\n')
+print('-' * 36)
+print('      >>>   starting   <<<')
+print('-' * 36)
+print('\n\n')
+time.sleep(1)
+
+
+###############################################################################
+
 
 
 class Getini:
@@ -70,6 +108,7 @@ class Getini:
             self.sleepingcell_sql = 'sleepingcell'
             self.htmlname = (datetime.date.today() - datetime.timedelta(days=1)
                              ).strftime('%Y%m%d')
+            self.maxue = 'maxue_day'
             if ini.actemail == '1':
                 self.subject = self.email['subject'] + (
                     datetime.date.today() - datetime.timedelta(
@@ -88,14 +127,17 @@ class Getini:
             self.top_kpi_sql = 'top_kpi_hour'
             self.sleepingcell_sql = 'sleepingcell'
             self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H')
+            self.maxue = 'maxue_hour'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H')
         elif self.config['timetype'] == 'raw' or self.config[
-                'timetype'] == 'raw_monitor':
+            'timetype'] == 'raw_monitor':
             self.starttime = (
                 datetime.datetime.now() - datetime.timedelta(minutes=(
-                    self.config['timeint'] + 1) * 15)).strftime('%Y%m%d%H%M')
+                                                                         self.config[
+                                                                             'timeint'] + 1) * 15)).strftime(
+                '%Y%m%d%H%M')
             self.endtime = datetime.datetime.now().strftime('%Y%m%d%H%M')
             self.starttime_topn = (
                 datetime.datetime.now() - datetime.timedelta(
@@ -107,6 +149,7 @@ class Getini:
             self.top_kpi_sql = 'top_kpi_raw'
             self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H%M')
             self.sleepingcell_sql = 'sleepingcell_raw'
+            self.maxue = 'maxue_raw'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
@@ -160,7 +203,7 @@ class Db:
         self.user = user
         self.pwd = pwd
 
-# 连接数据库
+    # 连接数据库
 
     def db_connect(self):
         print('>>> loading:', self.ip, '...\n')
@@ -303,6 +346,20 @@ class Db:
                              'CANCEL_TIME'.lower(): ('', ''),
                              'SUPPLEMENTARY_INFO'.lower(): ('', '')}
 
+        def maxue():
+            self.kpi_dict = {
+                'ENB_CELL'.lower(): ('', 'cellname'),
+                'VERSION'.lower(): ('', ''),
+                '最大激活用户数'.lower(): ('', ''),
+                '门限值'.lower(): ('', ''),
+                '配置最大激活用户数'.lower(): ('', ''),
+                'cqi资源'.lower(): ('', ''),
+                'sr资源'.lower(): ('', ''),
+                'maxNumActUE'.lower(): ('', ''),
+                'maxNumRrc'.lower(): ('', ''),
+                'maxNumRrcEmergency'.lower(): ('', '')
+            }
+
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
                         'top_qci1connect': top_qci1connect,
@@ -314,19 +371,21 @@ class Db:
                         'top_erabdrop': top_erabdrop,
                         'sleepingcell': sleepingcell,
                         'overcrowding': overcrowding,
-                        'alarm': alarm}
+                        'alarm': alarm,
+                        'maxue': maxue}
+
         datatypelist[datatype]()
         self.headlist = [
             (child[0].lower(), self.dateget.description.index(child),
              self.kpi_dict[child[0].lower()])
             for child in self.dateget.description
             if child[0].lower() in self.kpi_dict
-        ]
+            ]
         self.headdata = [i[0] for i in self.headlist]
         self.headindex = [i[1] for i in self.headlist]
         self.kpirange = {i[1]: i[2] for i in self.headlist}
         self.head_data_index = dict(zip(self.headdata, self.headindex))
-        self.table = prettytable.PrettyTable(self.headdata)
+        # self.table = prettytable.PrettyTable(self.headdata)
         # 在终端上显示
         # self.table.padding_width = 1
         self.dbdata = self.dateget.fetchall()
@@ -379,7 +438,7 @@ class Html:
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <title>潮州诺基亚日常监控报告_v1.1</title>
+                <title>诺基亚日常监控报告_v1.2</title>
             </head>
             <body>'''
 
@@ -473,22 +532,38 @@ class Report():
         html.body('h1', '一、概况')
 
         # 获取关键kpi指标
-        html.body('h2', '   1、关键kpi指标：')
+        html.body('h2', '   关键kpi指标：')
         html.table()
         db.getdata(ini.mainvosql)
         db.displaydata()
         # 获取volte指标
-        html.body('h2', '   2、VOLTE指标')
+        html.body('h2', '   VOLTE指标')
         html.table()
 
-        # esrvcc成功率
+        # 休眠小区
         db.getdata(ini.sleepingcell_sql)
         db.displaydata(datatype='sleepingcell')
         if len(db.dbdata) != 0:
-            html.body('h2', '  3、休眠小区')
+            html.body('h2', '  休眠小区')
             html.table()
 
-# 获取top小区指标
+        # 最大激活用户数检测
+        db.getdata(ini.maxue, timetype='top')
+        db.displaydata(datatype='maxue')
+        if len(db.dbdata) != 0:
+            html.body('h2', '  最大激活用户数检测')
+
+            if type == 'hour':
+                html.body('h4', '   最近一x小时最大激活用户数超过配置门限70%小区，请尽快扩容！')
+            elif type == 'day':
+                html.body('h4', '   昨天最大激活用户数超过配置门限70%小区，请尽快扩容！')
+            elif type == 'raw':
+                html.body('h4', '   最近15分钟最大激活用户数超过配置门限70%小区，请尽快扩容！')
+            html.table()
+            self.topcelln += 1
+
+
+        # 获取top小区指标
         if type == 'hour':
             html.body('h1', '二、最近一小时 TOP N 小区')
         elif type == 'day':
@@ -496,8 +571,8 @@ class Report():
         elif type == 'raw':
             html.body('h1', '二、最近15分钟 TOP N 小区')
 
-# html.body('h2', '  1、VOLTE')
-# esrvcc成功率
+        # html.body('h2', '  1、VOLTE')
+        # esrvcc成功率
         db.getdata(ini.top_volte_sql, timetype='top', counter='esrvcc失败次数')
         db.displaydata(datatype='top_srvcc')
         if len(db.dbdata) != 0:
@@ -513,7 +588,7 @@ class Report():
             html.table()
             self.topcelln += 1
 
-# QCI1掉线率
+        # QCI1掉线率
         db.getdata(ini.top_volte_sql, timetype='top', counter='QCI1掉线次数')
         db.displaydata(datatype='top_qci1drop')
         if len(db.dbdata) != 0:
@@ -521,8 +596,8 @@ class Report():
             html.table()
             self.topcelln += 1
 
-# html.body('h2', '  2、关键 KPI')
-# RRC连接建立成功率
+        # html.body('h2', '  2、关键 KPI')
+        # RRC连接建立成功率
         db.getdata(ini.top_kpi_sql, timetype='top', counter='RRC连接建立失败次数')
         db.displaydata(datatype='top_rrcconnect')
         if len(db.dbdata) != 0:
@@ -530,15 +605,15 @@ class Report():
             html.table()
             self.topcelln += 1
 
-# 切换请求次数QQ
+        # 切换请求次数QQ
         db.getdata(ini.top_kpi_sql, timetype='top', counter='切换失败次数QQ')
         db.displaydata(datatype='top_handover')
         if len(db.dbdata) != 0:
-            html.body('h3', '    ◎ 切换请求次数QQ')
+            html.body('h3', '    ◎ 切换成功率QQ')
             html.table()
             self.topcelln += 1
 
-# ERAB建立成功率
+        # ERAB建立成功率
         db.getdata(ini.top_kpi_sql, timetype='top', counter='ERAB建立失败数')
         db.displaydata(datatype='top_erabconnect')
         if len(db.dbdata) != 0:
@@ -546,7 +621,7 @@ class Report():
             html.table()
             self.topcelln += 1
 
-# 无线掉线率
+        # 无线掉线率
         db.getdata(ini.top_kpi_sql, timetype='top', counter='无线掉线率分子')
         db.displaydata(datatype='top_radiodrop')
         if len(db.dbdata) != 0:
@@ -554,7 +629,7 @@ class Report():
             html.table()
             self.topcelln += 1
 
-# ERAB掉线率
+        # ERAB掉线率
         db.getdata(ini.top_kpi_sql, timetype='top', counter='ERAB掉线次数')
         db.displaydata(datatype='top_erabdrop')
         if len(db.dbdata) != 0:
@@ -562,10 +637,12 @@ class Report():
             html.table()
             self.topcelln += 1
 
+
+
         if self.topcelln == 0:
             html.body('h3', '   ◎    无')
 
-# html结束
+        # html结束
         html.foot()
         # 生成HTML文件
         f_html = open(
@@ -601,6 +678,15 @@ class Report():
             html.body('h2', '   ◎  高拥塞小区')
             html.table()
             self.topcelln += 1
+
+        # 最大激活用户数检测
+        db.getdata(ini.maxue, timetype='top')
+        db.displaydata(datatype='maxue')
+        if len(db.dbdata) != 0:
+            html.body('h4', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限70%，请尽快扩容！')
+            html.table()
+            self.topcelln += 1
+
         # html结束
         html.foot()
         # 生成HTML文件
@@ -615,6 +701,7 @@ class Report():
             print('>>> 数据获取完成，已生成html报告!')
         else:
             print('>>> 该时段未存在恶化小区！')
+
 
 if __name__ == '__main__':
     ini = Getini()
@@ -637,7 +724,7 @@ if __name__ == '__main__':
         if ini.config['timetype'] == 'raw_monitor' and db_report.topcelln == 0:
             ini.main['actemail'] = '0'
 
-# 发送邮件
+        # 发送邮件
         if ini.main['actemail'] == '1':
             email = Email()
             email.loging()
