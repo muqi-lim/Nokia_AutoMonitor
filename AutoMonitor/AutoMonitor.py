@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # __author__ = 'linxuteng'
 
-import os  # noqa
+import os
 import sys
 import configparser
 import time
@@ -12,7 +12,6 @@ import cx_Oracle
 # 邮件模块
 import smtplib
 from email.mime.text import MIMEText
-
 
 ##############################################################################
 print("""
@@ -554,14 +553,13 @@ class Report():
             html.body('h2', '  最大激活用户数检测')
 
             if type == 'hour':
-                html.body('h4', '   最近一x小时最大激活用户数超过配置门限70%小区，请尽快扩容！')
+                html.body('h4', '   最近一小时最大激活用户数超过配置门限70%小区，请尽快扩容！')
             elif type == 'day':
                 html.body('h4', '   昨天最大激活用户数超过配置门限70%小区，请尽快扩容！')
             elif type == 'raw':
                 html.body('h4', '   最近15分钟最大激活用户数超过配置门限70%小区，请尽快扩容！')
             html.table()
             self.topcelln += 1
-
 
         # 获取top小区指标
         if type == 'hour':
@@ -636,8 +634,6 @@ class Report():
             html.body('h3', '   ◎  ERAB掉线率')
             html.table()
             self.topcelln += 1
-
-
 
         if self.topcelln == 0:
             html.body('h3', '   ◎    无')
