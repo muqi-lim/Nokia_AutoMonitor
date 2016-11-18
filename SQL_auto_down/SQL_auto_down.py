@@ -5,41 +5,59 @@ import configparser, cx_Oracle, os, sys, datetime, time
 
 ##############################################################################
 print("""
-
+--------------------------------
     Welcome to use tools!
     Version : 1.2.1
     Author : linxuteng
-    E_mail : lxuteng@163.com
+    E_mail : lxuteng@live.cn
+--------------------------------
+""")
+print('\n')
+exetime = int(time.strftime('%Y%m%d', time.localtime(time.time())))
+if exetime > 20180101:
+    print('\n')
+    print('-' * 64)
+    print('试用版本已过期，请联系作者！')
+    print('-' * 64)
+    print('\n')
+    input()
+    sys.exit()
 
+print('''
 
+update log:
 
-""")  ##
-time.sleep(1)  ##
-exetime = int(time.strftime('%Y%m%d', time.localtime(time.time())))  ##
-if exetime > 20180101:  ##
-    print('试用版本已过期，请联系作者！')  ##
-    input()  ##
-    sys.exit()  ##
-    ##
-print('>>> starting!')  ##
-print('\n')  ##
-time.sleep(1)  ##
-##
-##
-##################################################################################
+2016-11-17 增加按日期分文件夹存放功能；
+
+''')
+
+print('\n')
+print('-' * 36)
+print('      >>>   starting   <<<')
+print('-' * 36)
+print('\n\n')
+time.sleep(1)
+
+###############################################################################
 
 inipath = os.path.split(os.path.abspath(sys.argv[0]))[0]
 cf = configparser.ConfigParser()
 cf.read(''.join((inipath, '\\', 'config.ini')), encoding='utf-8-SIG')
 
 day = cf.get('config', 'day').split(',')
-if '' in day:
+if day == ['']:
     # day = [str(int(time.strftime('%Y%m%d', time.localtime(time.time())))-1)]
     day = [
         (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')]
 star_hour = cf.get('config', 'star_hour')
 end_hour = cf.get('config', 'end_hour')
 SQL_path = cf.get('config', 'SQL_path')
+if SQL_path == '':
+    SQL_path = ''.join((os.path.split(os.path.abspath(sys.argv[0]))[0], '/sql'))
+local_path = cf.get('config','local_path')
+if local_path == '':
+    local_path = inipath
+day_classify = cf.get('config','day_classify')
 
 # 获取数据库名称及账号密码
 db_name_list = cf.options('db')
@@ -67,13 +85,19 @@ else:
         sql_list_i = cf.get('SQL_name', sql_i).split(',')
         x = 0
         y = 0
+        # sql名字如重复，则自动添加数字，防止被覆盖
         while x == 0:
             if sql_list_i[0] + '{' + str(y) + '}' in SQL_list:
                 y += 1
             else:
                 x = 1
-        SQL_list[sql_list_i[0] + '{' + str(y) + '}'] = (
-        sql_list_i[1], sql_list_i[2], sql_list_i[3])
+        if sql_list_i[2] == '' or day_classify == '1':
+            SQL_list[sql_list_i[0] + '{' + str(y) + '}'] = (
+                sql_list_i[1], local_path, sql_list_i[3])
+        else:
+            SQL_list[sql_list_i[0] + '{' + str(y) + '}'] = (
+                sql_list_i[1], sql_list_i[2], sql_list_i[3])
+
 
 
 # 获取本地文件及文件夹
@@ -153,11 +177,19 @@ for db_ob in db_list:
             #     print('查询结束，共获取数据：',len(list(x.fetchall())),'\n')
             print('开始导出，请稍后...')
 
-            local_dir_list = local_dir(SQL_list[SQL_list_ob][1])[1]
+            if day_classify == '1':
+                local_path_day = ''.join((SQL_list[SQL_list_ob][1],'\\',day_ob))
+            else:
+                local_path_day = SQL_list[SQL_list_ob][1]
+            if os.path.exists(local_path_day) == 0:
+                os.mkdir(local_path_day)
+
+
+            local_dir_list = local_dir(local_path_day)[1]
             if SQL_list[SQL_list_ob][2][0] == '$':
                 name_down = ''.join(
                     (SQL_list[SQL_list_ob][2][1:], '_', db_ob, '.csv'))
-                f = open(''.join((SQL_list[SQL_list_ob][1], '\\', name_down)),
+                f = open(''.join((local_path_day, '\\', name_down)),
                          'a', encoding='utf-8-SIG')
                 if name_down not in local_dir_list:
                     for m in x.description:
@@ -190,7 +222,7 @@ for db_ob in db_list:
                                              day_ob, '_', db_ob, '(', str(l),
                                              ').csv'))
                     f = open(
-                        ''.join((SQL_list[SQL_list_ob][1], '\\', name_down)),
+                        ''.join((local_path_day, '\\', name_down)),
                         'w', encoding='utf-8-SIG')
 
                     for m in x.description:
@@ -205,4 +237,5 @@ for db_ob in db_list:
                 f.write('\n')
             f.close()
             print(name_down, ' 导出完成！')
-            print('*' * 32)
+            print('-' * 32)
+print('all done')
