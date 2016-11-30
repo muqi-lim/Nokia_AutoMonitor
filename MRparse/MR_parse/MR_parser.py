@@ -28,24 +28,22 @@ if auth_time > 20180101:
     print('\n')
     input()
     sys.exit()
-print('\n')
 
-print(
-    '''
+print('''
 update log:
 
-2016-11-23 v1
-2016-11-29 完成MRS解码
+2016-11-23 v1重构
+2016-11-29 重构完成MRS解码
+2016-11-30 修复定时任务bug
 
-
-'''
-)
+''')
 print('-' * 36)
 print('      >>>   starting   <<<')
 print('-' * 36)
-print('\n\n')
+print('\n')
 time.sleep(1)
 ##############################################################################
+
 
 # noinspection PyAttributeOutsideInit
 class ConfigManager:
@@ -59,10 +57,11 @@ class ConfigManager:
         self.config_main = {}
         self.config_mrs = {}
         self.config_mro = {}
-        # 获取 main 配置
-        self.get_main_config()
 
         self.yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')
+
+        # 获取 main 配置
+        self.get_main_config()
 
     def get_main_config(self):
 
@@ -212,10 +211,14 @@ class ConfigManager:
             print('未获取到源文件，请检查source_path是否设置正确或源文件是否存在！')
             sys.exit()
 
+    def makedir(self):
+        if not os.path.exists(self.config_main['target_path'][0]):
+            os.makedirs(self.config_main['target_path'][0])
+
     # 进度条
     @staticmethod
     def progress(num_total, num_run, file_name=''):
-        bar_len = 24
+        bar_len = 10
         hashes = '|' * int(num_run / num_total * bar_len)
         spaces = '_' * (bar_len - len(hashes))
         sys.stdout.write("\r%s %s %d%%  %s" % (str(num_run), hashes + spaces, int(num_run / num_total * 100),
@@ -295,13 +298,15 @@ class MrsParser:
 
     def data_writer(self, gather_type):
         config_main = config_manager.config_main
+        config_manager.makedir()
         for i in self.data_data:
             if config_main['timing'][0] == '1':
                 if gather_type == 'hour':
-                    f = open(''.join((config_main['target_path'][0], '\\', i, config_main['yesterday'], '_hour.csv')),
+                    f = open(''.join((config_main['target_path'][0], '\\', i, config_manager.yesterday,
+                                      '_hour.csv')),
                              'w')
                 elif gather_type == 'id':
-                    f = open(''.join((config_main['target_path'][0], '\\', i, config_main['yesterday'], '.csv')), 'w')
+                    f = open(''.join((config_main['target_path'][0], '\\', i, config_manager.yesterday, '.csv')), 'w')
             else:
                 if gather_type == 'hour':
                     f = open(''.join((config_main['target_path'][0], '\\', i, '_hour.csv')), 'w')
@@ -321,7 +326,7 @@ class MrsParser:
             f.write('\n')
 
             if config_main['timing'][0] == '1':
-                f.write(config_main['yesterday'])
+                f.write(config_manager.yesterday)
                 f.write(',')
 
             for j in self.data_data[i]:
@@ -359,6 +364,7 @@ class MroParser:
 
 if __name__ == '__main__':
     star_time = time.time()
+    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
     # 初始化配置
     config_manager = ConfigManager()
 
@@ -384,5 +390,5 @@ if __name__ == '__main__':
     for b in parse_type:
         if b in config_manager.parse_file_list:
             parse_type_choice[b.lower()]()
-
+    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
     print('>>> 历时：', time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(time.time() - star_time)))
