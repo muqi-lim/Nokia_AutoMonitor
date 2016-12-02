@@ -7,6 +7,8 @@ import datetime
 import gzip
 import tarfile
 import time
+import math
+
 # import copy
 
 ##############################################################################
@@ -42,6 +44,8 @@ print('      >>>   starting   <<<')
 print('-' * 36)
 print('\n')
 time.sleep(1)
+
+
 ##############################################################################
 
 
@@ -109,7 +113,7 @@ class ConfigManager:
         print('>>> 解码 MRS 数据...')
         mrs_manager = MrsParser()
         config_manager.parse_process('mrs', mrs_manager)
-        print('>>> 数据处理及保存，请等待...')
+        print('>>> MRS数据处理及保存，请等待...')
         num_i = len(config_manager.config_mrs['gather_type'])
         if num_i == 1:
             mrs_manager.data_writer(config_manager.config_mrs['gather_type'][0])
@@ -119,15 +123,21 @@ class ConfigManager:
             mrs_manager.data_writer('id')
         print('>>> MRS 数据处理完毕！')
         print('-' * 26)
-        print('完成！解码结果保存在此文件夹: ', config_manager.config_main['target_path'][0])
+        print('完成！MRS解码结果保存在此文件夹: ', config_manager.config_main['target_path'][0])
         print('-' * 26)
 
     @staticmethod
     def star_mro_manager():
         """MRO解码"""
-        print('>>> 开始处理 MRO 数据...')
+        print('>>> 解码 MRO 数据...')
         mro_manager = MroParser()
         config_manager.parse_process('mro', mro_manager)
+        print('>>> MRO数据处理及保存，请等待...')
+        mro_manager.writer()
+        print('>>> MRS 数据处理完毕！')
+        print('-' * 26)
+        print('完成！MRO解码结果保存在此文件夹: ', config_manager.config_main['target_path'][0])
+        print('-' * 26)
 
     def parse_process(self, filetype, parsetype_class):
         parse_file_list = self.parse_file_list[filetype]
@@ -136,7 +146,6 @@ class ConfigManager:
         num_run = 0
         for temp_n in parse_file_list:
             num_n += len(parse_file_list[temp_n])
-
         # parse_file_list 格式为 {'mrs':{'gz':[...],'xml':[...]},
         #                         'mro':{'gz':[...],'xml':[...]},
         #                        }
@@ -146,25 +155,31 @@ class ConfigManager:
             for o in parse_file_list[n]:
                 # 进度条
                 config_manager.progress(num_n, num_run, os.path.split(o)[-1])
+                num_run += 1
                 if n == 'xml':
-                    tree = ET.parse(o)
-                    parsetype_class.parser(tree)
+                    try:
+                        tree = ET.parse(o)
+                        parsetype_class.parser(tree)
+                    except Exception as error:
+                        continue
                 elif n == 'gz':
                     try:
-                        tar_f = tarfile.open(o)
-                        for temp_file in tar_f.getnames():
-                            temp_file_tar_f = tar_f.extractfile(temp_file)
-                            temp_file_suffix = temp_file.split('.')[-1].lower()
-                            if temp_file_suffix == 'gz':
-                                tree = ET.parse(gzip.open(temp_file_tar_f))
-                                parsetype_class.parser(tree)
-                            elif temp_file_suffix == 'xml':
-                                tree = ET.parse(temp_file_tar_f)
-                                parsetype_class.parser(tree)
+                        try:
+                            tar_f = tarfile.open(o)
+                            for temp_file in tar_f.getnames():
+                                temp_file_tar_f = tar_f.extractfile(temp_file)
+                                temp_file_suffix = temp_file.split('.')[-1].lower()
+                                if temp_file_suffix == 'gz':
+                                    tree = ET.parse(gzip.open(temp_file_tar_f))
+                                    parsetype_class.parser(tree)
+                                elif temp_file_suffix == 'xml':
+                                    tree = ET.parse(temp_file_tar_f)
+                                    parsetype_class.parser(tree)
+                        except:
+                            tree = ET.parse(gzip.open(o))
+                            parsetype_class.parser(tree)
                     except:
-                        tree = ET.parse(gzip.open(o))
-                        parsetype_class.parser(tree)
-                num_run += 1
+                        continue
         # 完成进度条
         config_manager.progress(num_n, num_run, 'done!\n')
 
@@ -175,38 +190,31 @@ class ConfigManager:
         if not os.path.exists(path):
             print('source_path 所设置的目录不存在，请检查！')
             sys.exit()
-        for p in os.listdir(path):
-            source_path = '\\'.join((path, p))
-            if os.path.isdir(source_path):
-                self.get_files(source_path)
-            else:
-                # 判断解码文件类型（MRS or MRO）
+        for root, dirs, files in os.walk(path):
+            for temp_file in files:
                 temp_parse_type_num = 0
-                for temp_x in self.config_main['parse_type']:
-                    if temp_x in p.lower():
+                for temp_parse_type in self.config_main['parse_type']:
+                    if temp_parse_type in temp_file.lower():
                         temp_parse_type_num = 1
-                        p = [p, temp_x]
-                        if temp_x not in self.parse_file_list:
-                            self.parse_file_list[temp_x] = {}
-                        break
-                    else:
-                        continue
+                        temp_file_plus = [temp_file, temp_parse_type]
+                        if temp_parse_type not in self.parse_file_list:
+                            self.parse_file_list[temp_parse_type] = {}
                 if temp_parse_type_num == 0:
                     continue
                 # 判断文件类型（gz or xml）
                 # 判断是否有文件后缀，如果没有，则跳过
-                if '.' not in p[0]:
+                if '.' not in temp_file:
                     continue
                 else:
-                    file_type = p[0].split('.')[-1].lower()
+                    file_type = temp_file.split('.')[-1].lower()
                     # 如果不是 file_type 设置的文件格式，则跳过
                     if file_type not in self.config_main['file_type']:
                         continue
                     # 如果有且满足file_type设置的文件格式，则加入到parse_file_list中
-                    if file_type not in self.parse_file_list[p[1]]:
-                        self.parse_file_list[p[1]][file_type] = []
-                self.parse_file_list[p[1]][file_type].append(source_path)
-
+                    if file_type not in self.parse_file_list[temp_file_plus[1]]:
+                        self.parse_file_list[temp_file_plus[1]][file_type] = []
+                source_path = os.path.join(root, temp_file)
+                self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
         if len(self.parse_file_list) == 0:
             print('未获取到源文件，请检查source_path是否设置正确或源文件是否存在！')
             sys.exit()
@@ -302,11 +310,11 @@ class MrsParser:
         for i in self.data_data:
             if config_main['timing'][0] == '1':
                 if gather_type == 'hour':
-                    f = open(''.join((config_main['target_path'][0], '\\', i, config_manager.yesterday,
-                                      '_hour.csv')),
-                             'w')
+                    f = open(''.join((config_main['target_path'][0], '\\', i, '_', config_manager.yesterday,
+                                      '_hour.csv')), 'w')
                 elif gather_type == 'id':
-                    f = open(''.join((config_main['target_path'][0], '\\', i, config_manager.yesterday, '.csv')), 'w')
+                    f = open(''.join((config_main['target_path'][0], '\\', i, '_', config_manager.yesterday, '.csv')),
+                             'w')
             else:
                 if gather_type == 'hour':
                     f = open(''.join((config_main['target_path'][0], '\\', i, '_hour.csv')), 'w')
@@ -325,12 +333,13 @@ class MrsParser:
                 f.write(',')
             f.write('\n')
 
-            if config_main['timing'][0] == '1':
-                f.write(config_manager.yesterday)
-                f.write(',')
-
             for j in self.data_data[i]:
                 for k in self.data_data[i][j]:
+
+                    if config_main['timing'][0] == '1':
+                        f.write(config_manager.yesterday)
+                        f.write(',')
+
                     f.write(j + ',' + k + ',')
                     try:
                         f.write(str(int(k) // 256))
@@ -357,10 +366,373 @@ class MrsParser:
 class MroParser:
     def __init__(self):
         config_manager.get_mro_config()
+        self.head_counter = 0
+        self.data_head = ''
+        self.data_data = {}
+
+        # 临时变量
+        self.l_list = [0]
+
+    def get_parser_head(self, tree):
+        for ii in tree.iter('measurement'):
+            for jj in ii:
+                if jj.text[:12] == 'MR.LteScRSRP':
+                    self.data_head = jj.text.split(' ')
+
+    def overlap(self, k, overlap_num, overlap, overlap_ncell):
+        overlap_db = int(overlap[0])
+        overlap_ncell_rsrp = int(overlap_ncell[0])
+        if (self.l_list[11] != 0) and (
+                    self.l_list[9] >= (140 + overlap_ncell_rsrp)) and (
+                    (self.l_list[9] - self.l_list[0]) >= overlap_db) and (
+                    self.l_list[7] == self.l_list[11]):
+            # 采样点
+            if overlap_num == 0:
+                temp_overlap_ncell_rsrp = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp)))
+                try:
+                    self.data_data[k.attrib['id']][temp_overlap_ncell_rsrp] += 1
+                except:
+                    self.data_data[k.attrib['id']][temp_overlap_ncell_rsrp] = 1
+                overlap_num = 1
+
+            temp_s_cell_rsrp = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp), 's_cell_rsrp'))
+            temp_n_cell_rsrp = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp), 'n_cell_rsrp'))
+            temp_sctadv = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp), 'ScTadv'))
+            try:
+                self.data_data[k.attrib['id']][temp_s_cell_rsrp] += self.l_list[0]
+                self.data_data[k.attrib['id']][temp_s_cell_rsrp] //= 2
+
+                self.data_data[k.attrib['id']][temp_n_cell_rsrp] += self.l_list[9]
+                self.data_data[k.attrib['id']][temp_n_cell_rsrp] //= 2
+
+                self.data_data[k.attrib['id']][temp_sctadv] += self.l_list[2]
+                self.data_data[k.attrib['id']][temp_sctadv] //= 2
+            except:
+                self.data_data[k.attrib['id']][temp_s_cell_rsrp] = self.l_list[0]
+                self.data_data[k.attrib['id']][temp_n_cell_rsrp] = self.l_list[9]
+                self.data_data[k.attrib['id']][temp_sctadv] = self.l_list[2]
+        return overlap_num
+
+    def ecid_ecid(self, k, n_cell_earfcn_pci):
+
+        def fun_minus11():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['<-10db'] += 1
+
+        def fun_minus10():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-10db'] += 1
+
+        def fun_minus9():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-9db'] += 1
+
+        def fun_minus8():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-8db'] += 1
+
+        def fun_minus7():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-7db'] += 1
+
+        def fun_minus6():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-6db'] += 1
+
+        def fun_minus5():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-5db'] += 1
+
+        def fun_minus4():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-4db'] += 1
+
+        def fun_minus3():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-3db'] += 1
+
+        def fun_minus2():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-2db'] += 1
+
+        def fun_minus1():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['-1db'] += 1
+
+        def fun_0():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['0db'] += 1
+
+        def fun_1():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['1db'] += 1
+
+        def fun_2():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['2db'] += 1
+
+        def fun_3():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['3db'] += 1
+
+        def fun_4():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['4db'] += 1
+
+        def fun_5():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['5db'] += 1
+
+        def fun_6():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['6db'] += 1
+
+        def fun_7():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['7db'] += 1
+
+        def fun_8():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['8db'] += 1
+
+        def fun_9():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['9db'] += 1
+
+        def fun_10():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['10db'] += 1
+
+        def fun_11():
+            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['>10db'] += 1
+
+        fun_list = {-11: fun_minus11, -10: fun_minus10, -9: fun_minus9,
+                    -8: fun_minus8, -7: fun_minus7, -6: fun_minus6,
+                    -5: fun_minus5, -4: fun_minus4, -3: fun_minus3, -2: fun_minus2,
+                    -1: fun_minus1, 0: fun_0, 1: fun_1,
+                    2: fun_2, 3: fun_3, 4: fun_4, 5: fun_5, 6: fun_6, 7: fun_7,
+                    8: fun_8, 9: fun_9, 10: fun_10, 11: fun_11}
+
+        a = self.l_list[9] - self.l_list[0]
+        try:
+            fun_list[a]()
+        except:
+            if a < -10:
+                a = -11
+            elif a > 10:
+                a = 11
+            fun_list[a]()
+
+    def earfcn_pci_cellid_relate(self):
+
+        """建立earfcn pci cellid 索引表"""
+
+        f = open(os.path.join(config_manager.main_path, 'enb_basedat.csv'), encoding='utf-8-sig')
+        basedatas = [i.rstrip().split(',') for i in f.readlines()]
+
+        self.earfcn_pci_cellid = {}
+        self.enbid_list = {}
+
+        for k in basedatas:
+            if k[7] not in self.earfcn_pci_cellid:
+                self.earfcn_pci_cellid[k[7]] = {}
+            if k[6] not in self.earfcn_pci_cellid[k[7]]:
+                self.earfcn_pci_cellid[k[7]][k[6]] = []
+            try:
+                self.earfcn_pci_cellid[k[7]][k[6]].append((k[0], k[1], float(k[4]), float(k[5])))
+            except:
+                pass
+
+            if k[0] not in self.enbid_list:
+                try:
+                    self.enbid_list[k[0]] = (float(k[4]), float(k[5]))
+                except:
+                    pass
+
+    @staticmethod
+    def distance(lon_1, lat_1, lon_2, lat_2):
+
+        """计算距离"""
+
+        lon1, lat1, lon2, lat2 = map(math.radians, [lon_1, lat_1, lon_2, lat_2])
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        c = 2 * math.asin(math.sqrt(a))
+        r = 6371  # 地球平均半径，单位为公里
+        return c * r * 1000
+
+    def min_distance_cell(self, s_enbid, n_earfcn, n_pci):
+
+        """提取距离最近的小区"""
+
+        min_distance_list = {}
+        min_cell = '-'
+        min_stance = '-'
+        try:
+            for i in self.earfcn_pci_cellid[n_earfcn][n_pci]:
+                min_distance_list[self.distance(self.enbid_list[s_enbid][0], self.enbid_list[s_enbid][1], i[2],
+                                                i[3])] = i[1]
+                min_stance = min(min_distance_list)
+                min_cell = min_distance_list[min_stance]
+                min_stance = int(min_stance)
+        except:
+            pass
+
+        return min_cell, min_stance
 
     def parser(self, tree):
-        pass
+        # 获取表头，仅允许一次
+        if self.head_counter == 0:
+            self.get_parser_head(tree)
+            self.head_counter = 1
 
+        # 解码主程序
+        # MRO共有三个measurement，但是均未命名，因此需先判断哪个measurement是所需要提取的数据
+        root = tree.getroot()
+        measurement_len = len([i for i in tree.iter('measurement')])
+        for measurement_len_ob in range(measurement_len):
+            if (root[1][measurement_len_ob][0].tag == 'smr') and (
+                        root[1][measurement_len_ob][0].text[:12] == 'MR.LteScRSRP'):
+                for k in root[1][measurement_len_ob].iter('object'):
+                    if k.attrib['id'] not in self.data_data:
+                        self.data_data[k.attrib['id']] = {'s_samplint': 0, 'ECID_ECID': {}}
+                    l_num = 0
+                    overlap_num_1 = 0
+                    overlap_num_2 = 0
+                    for l in k:
+                        self.l_list = numpy.array(list(map(int, l.text.replace('NIL', '0').rstrip().split(' '))))
+                        # 计算主小区采样点及采样信息
+                        if l_num == 0:
+                            self.data_data[k.attrib['id']]['s_samplint'] += 1
+                            try:
+                                self.data_data[k.attrib['id']]['s_basic'] += numpy.concatenate((
+                                    self.l_list[0:9], self.l_list[20:22], self.l_list[23:27]))
+                                self.data_data[k.attrib['id']]['s_basic'] /= 2
+                            except:
+                                self.data_data[k.attrib['id']]['s_basic'] = numpy.concatenate(
+                                    (self.l_list[0:9], self.l_list[20:22], self.l_list[23:27]))
+                            l_num = 1
+
+                        # 计算重叠覆盖率_1
+                        overlap_db_1 = config_manager.config_mro['overlap_db_1']
+                        overlap_ncell_rsrp_1 = config_manager.config_mro['overlap_ncell_rsrp_1']
+                        if overlap_db_1 != '' and overlap_ncell_rsrp_1 != '':
+                            overlap_num_1 = self.overlap(k, overlap_num_1, overlap_db_1, overlap_ncell_rsrp_1)
+
+                        # 计算重叠覆盖率_2
+                        overlap_db_2 = config_manager.config_mro['overlap_db_2']
+                        overlap_ncell_rsrp_2 = config_manager.config_mro['overlap_ncell_rsrp_2']
+                        if overlap_db_2 != '' and overlap_ncell_rsrp_2 != '':
+                            overlap_num_2 = self.overlap(k, overlap_num_2, overlap_db_2, overlap_ncell_rsrp_2)
+
+                        # 计算与邻区关系ECID
+                        n_cell_earfcn_pci = '_'.join(list(map(str, self.l_list[11:13])))
+                        if self.l_list[11] != 0:
+                            if n_cell_earfcn_pci not in self.data_data[k.attrib['id']]['ECID_ECID']:
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci] = {
+                                    'ncrsrp': self.l_list[9], 'scrsrp': self.l_list[0], 'ScTadv': self.l_list[2],
+                                    'n_samplint': 0, '<-10db': 0, '-10db': 0, '-9db': 0, '-8db': 0, '-7db': 0,
+                                    '-6db': 0, '-5db': 0, '-4db': 0, '-3db': 0, '-2db': 0, '-1db': 0, '0db': 0,
+                                    '1db': 0, '2db': 0, '3db': 0, '4db': 0, '5db': 0, '6db': 0, '7db': 0,
+                                    '8db': 0, '9db': 0, '10db': 0, '>10db': 0}
+                                self.ecid_ecid(k, n_cell_earfcn_pci)
+                            else:
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci][
+                                    'ncrsrp'] += self.l_list[9]
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['ncrsrp'] /= 2
+
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci][
+                                    'scrsrp'] += self.l_list[0]
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['scrsrp'] /= 2
+
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci][
+                                    'ScTadv'] += self.l_list[2]
+                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['ScTadv'] /= 2
+                                self.ecid_ecid(k, n_cell_earfcn_pci)
+                            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['n_samplint'] += 1
+                # 获取到所需要的measurement后，则退出循环
+                break
+
+    def writer(self):
+        # 重命名counter名称（太长了不好看）
+        overlap_1_s = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_1'][0]),
+                                str(config_manager.config_mro['overlap_ncell_rsrp_1'][0]), 's_cell_rsrp'))
+        overlap_1_n = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_1'][0]),
+                                str(config_manager.config_mro['overlap_ncell_rsrp_1'][0]), 'n_cell_rsrp'))
+        overlap_1_ta = '_'.join(
+            ('overlap', str(config_manager.config_mro['overlap_db_1'][0]), str(config_manager.config_mro[
+                                                                                'overlap_ncell_rsrp_1'][0]), 'ScTadv'))
+        overlap_1_samplint = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_1'][0]),
+                                       str(config_manager.config_mro['overlap_ncell_rsrp_1'][0]), 'samplint'))
+        overlap_2_samplint = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_2'][0]),
+                                       str(config_manager.config_mro['overlap_ncell_rsrp_2'][0]), 'samplint'))
+        overlap_2_s = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_2'][0]),
+                                str(config_manager.config_mro['overlap_ncell_rsrp_2'][0]), 's_cell_rsrp'))
+        overlap_2_n = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_2'][0]),
+                                str(config_manager.config_mro['overlap_ncell_rsrp_2'][0]), 'n_cell_rsrp'))
+        overlap_2_ta = '_'.join(
+            ('overlap', str(config_manager.config_mro['overlap_db_2'][0]), str(config_manager.config_mro[
+                                                                                'overlap_ncell_rsrp_2'][0]), 'ScTadv'))
+        # 与解码结果保持一致
+        overlap_1_sam = '_'.join(
+            ('overlap', str(config_manager.config_mro['overlap_db_1'][0]), str(config_manager.config_mro[
+                                                                                'overlap_ncell_rsrp_1'][0])))
+        overlap_2_sam = '_'.join(
+            ('overlap', str(config_manager.config_mro['overlap_db_2'][0]), str(config_manager.config_mro[
+                                                                                'overlap_ncell_rsrp_2'][0])))
+        # 生成文件
+        mro_main_f = open(''.join((config_manager.config_main['target_path'][0], '\\', 'MRO_main.csv')), 'w')
+        # 写入表头
+        mro_main_f.write(
+            'ECID,ENB_CELL,MR.LteScRSRP,MR.LteScRSRQ,MR.LteScTadv,MR.LteSceNBRxTxTimeDiff,MR.LteScPHR,MR.LteScAOA,'
+            'MR.LteScSinrUL,MR.LteScEarfcn,MR.LteScPci,MR.LteScPUSCHPRBNum,MR.LteScPDSCHPRBNum,MR.LteScRI1,'
+            'MR.LteScRI2,MR.LteScRI4,MR.LteScRI8,s_samplint,')
+        mro_main_f.write(','.join((overlap_1_samplint, overlap_1_s, overlap_1_n, overlap_1_ta, overlap_2_samplint,
+                                   overlap_2_s, overlap_2_n, overlap_2_ta, '\n')))
+        # 写入解码结果
+        for a in self.data_data:
+            mro_main_f.write(a)
+            mro_main_f.write(',')
+            mro_main_f.write('_'.join((str(int(a) // 256), str(int(a) % 256))))
+            mro_main_f.write(',')
+            mro_main_f.write(
+                ','.join(list(map(str, self.data_data[a]['s_basic']))))
+            mro_main_f.write(',')
+            mro_main_f.write(str(self.data_data[a]['s_samplint']))
+            mro_main_f.write(',')
+            for temp_b in (overlap_1_sam, overlap_1_s, overlap_1_n, overlap_1_ta,
+                           overlap_2_sam, overlap_2_s, overlap_2_n, overlap_2_ta):
+                try:
+                    if temp_b in (overlap_1_s, overlap_1_n, overlap_2_s, overlap_2_n):
+                        mro_main_f.write(str(self.data_data[a][temp_b] - 140))
+                    else:
+                        mro_main_f.write(str(self.data_data[a][temp_b]))
+                except:
+                    mro_main_f.write('-')
+                mro_main_f.write(',')
+            mro_main_f.write('\n')
+
+        # 读取小区基础数据文件
+        self.earfcn_pci_cellid_relate()
+
+        # 生成结果文件ECID
+        # 生成文件
+        mro_main_f = open(''.join((config_manager.config_main['target_path'][0], '\\', 'MRO_ECID.csv')), 'w')
+        # 写入表头
+        mro_main_f.write('s_ECID')
+        mro_main_f.write(',ENB_CELL,s_earfcn,s_pci,n_ENB_CELL,')
+        mro_main_f.write('n_earfcn,n_pci,s_n_distance(m)')
+        mro_main_f.write(',Scrsrp,ScTadv,n_samplint,ncrsrp,<-10db,-10db,-9db,-8db,-7db,-6db,-5db,-4db,-3db,-2db,-1db,'
+                         '0db,1db,2db,3db,4db,5db,6db,7db,8db,9db,10db,>10db\n')
+        # 写入结果文件
+        for c in self.data_data:
+            for d in self.data_data[c]['ECID_ECID']:
+                mro_main_f.write(c)
+                mro_main_f.write(',')
+                mro_main_f.write('_'.join((str(int(c) // 256), str(int(c) % 256))))
+                mro_main_f.write(',')
+                mro_main_f.write(str(self.data_data[c]['s_basic'][7]))
+                mro_main_f.write(',')
+                mro_main_f.write(str(self.data_data[c]['s_basic'][8]))
+                mro_main_f.write(',')
+
+                earfcn_pci = d.split('_')
+                min_cell, min_stance = self.min_distance_cell(str(int(c) // 256), earfcn_pci[0], earfcn_pci[1])
+                mro_main_f.write(min_cell)
+
+                mro_main_f.write(',')
+                mro_main_f.write(','.join(earfcn_pci))
+                mro_main_f.write(',')
+                mro_main_f.write(str(min_stance))
+                mro_main_f.write(',')
+                for e in (
+                        'scrsrp', 'ScTadv', 'n_samplint', 'ncrsrp', '<-10db',
+                        '-10db', '-9db', '-8db', '-7db', '-6db', '-5db',
+                        '-4db', '-3db', '-2db', '-1db', '0db', '1db', '2db',
+                        '3db', '4db', '5db', '6db', '7db', '8db', '9db',
+                        '10db', '>10db'):
+                    mro_main_f.write(str(self.data_data[c]['ECID_ECID'][d][e]))
+                    mro_main_f.write(',')
+                mro_main_f.write('\n')
 
 if __name__ == '__main__':
     star_time = time.time()
@@ -371,17 +743,11 @@ if __name__ == '__main__':
     parse_type = config_manager.config_main['parse_type']
 
     # 统计获取到的文件数：
-    if len(parse_type) == 1:
+    for temp_i in config_manager.parse_file_list:
         num = 0
-        for temp_j in config_manager.parse_file_list[parse_type[0]]:
-            num += len(config_manager.parse_file_list[parse_type[0]][temp_j])
-        print('>>> 获取到 ', parse_type[0], ' 文件:', num)
-    elif len(parse_type) == 2:
-        num = 0
-        for temp_i in config_manager.parse_file_list:
-            for temp_k in config_manager.parse_file_list[temp_i]:
-                num += len(config_manager.parse_file_list[temp_i][temp_k])
-                print('>>> 获取到 ', temp_i, ' 文件:', num)
+        for temp_k in config_manager.parse_file_list[temp_i]:
+            num += len(config_manager.parse_file_list[temp_i][temp_k])
+        print('>>> 获取到 ', temp_i, ' 文件:', num)
 
     # 分别启动解码类型的解码程序
     parse_type_choice = {'mrs': config_manager.star_mrs_manager,
