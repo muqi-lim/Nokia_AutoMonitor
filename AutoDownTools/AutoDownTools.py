@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-__author__ = 'linxuteng'
-
 import configparser
 import datetime
 import os
@@ -8,21 +6,20 @@ import stat
 import subprocess
 import sys
 import time
-
+import ftplib
 import paramiko
 
 ##############################################################################
 print("""
 --------------------------------
     Welcome to use tools!
-    Version : 2.1.0
-    Author : linxuteng
+    Author : lin_xu_teng
     E_mail : lxuteng@live.cn
 --------------------------------
 """)
 print('\n')
-exetime = int(time.strftime('%Y%m%d', time.localtime(time.time())))
-if exetime > 20170101:
+auth_time = int(time.strftime('%Y%m%d', time.localtime(time.time())))
+if auth_time > 20180101:
     print('\n')
     print('-' * 64)
     print('试用版本已过期，请联系作者！')
@@ -33,20 +30,19 @@ if exetime > 20170101:
 
 print('''
 update log:
+
 2016-7-21 功能完成；
 2016-7-22 修复bug
 2016-09-09 完善功能，修复bug
+2016-12-4 增加对使用 FTP协议 服务器的支持
 
 ''')
-
-print('\n')
 print('-' * 36)
 print('      >>>   starting   <<<')
 print('-' * 36)
-print('\n\n')
+print('\n')
 time.sleep(1)
-
-###############################################################################
+##############################################################################
 
 
 class Getini:
@@ -146,12 +142,18 @@ class Db:
     def ftp_connect(self):
         print('>>> loading:', self.ip, '...\n')
         try:
-            T = paramiko.Transport(self.ip)
-            T.connect(username=self.user, password=self.pwd)
-            self.sftp = paramiko.SFTPClient.from_transport(T)
-            print('>>> connect successful!\n')
-            self.status = 1
-            return 1
+            try:
+                T = paramiko.Transport(self.ip)
+                T.connect(username=self.user, password=self.pwd)
+                self.sftp = [paramiko.SFTPClient.from_transport(T), 'sftp']
+                print('>>> connect successful!\n')
+                self.status = 1
+                return 1
+            except:
+                self.sftp = [ftplib.FTP(self.ip,self.user,self.pwd,timeout=5) ,'ftp']
+                print('>>> connect successful!\n')
+                self.status = 1
+                return 1
         except:
             print('>>> fail connect to:', self.ip, '\n')
             self.status = 0
@@ -205,7 +207,13 @@ class Db:
                     if not os.path.exists(self.new_local_path):
                         os.makedirs(self.new_local_path)
                     if not os.path.exists(new_local_fullname):
-                        self.sftp.get(down_file, new_local_fullname)
+                        if self.sftp[1] == 'sftp':
+                            self.sftp[0].get(down_file, new_local_fullname)
+                        elif self.sftp[1] == 'ftp':
+                            with open(new_local_fullname, 'wb') as ff:
+                                self.sftp[0].retrbinary("RETR %s" %down_file,ff.write)
+
+
                     n += 1
 
 
@@ -234,13 +242,24 @@ class Getfiles:
 
     def remote_deep_getfiles(self, path):
         def walk(path):
-            for i in self.sftp.listdir_attr(path):
-                full_i = '/'.join((path, i.filename))
-                if stat.S_ISDIR(i.st_mode):
-                    walk(full_i)
-                else:
-                    self.filelist[0].append(full_i)
-                    self.filelist[1] += 1
+            if self.sftp[1] == 'sftp':
+                for i in self.sftp[0].listdir_attr(path):
+                    full_i = '/'.join((path, i.filename))
+                    if stat.S_ISDIR(i.st_mode):
+                        walk(full_i)
+                    else:
+                        self.filelist[0].append(full_i)
+                        self.filelist[1] += 1
+            elif self.sftp[1] == 'ftp':
+                for i in self.sftp[0].nlst(path):
+                    if '.' in i:
+                        self.filelist[0].append(i)
+                        self.filelist[1] += 1
+                    else:
+                        try:
+                            walk(i)
+                        except:
+                            pass
 
         if path == ['']:
             print('>>> 未设置 remote_path ，请检查！')
@@ -280,7 +299,7 @@ class Getfiles:
 
 
 # 进度条
-class Progress():
+class Progress:
     def __init__(self, len_):
         self.len_ = len_
 
