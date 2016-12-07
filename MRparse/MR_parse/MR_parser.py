@@ -15,7 +15,6 @@ import math
 print("""
 --------------------------------
     Welcome to use tools!
-    Version : 1.2.1
     Author : lin_xu_teng
     E_mail : lxuteng@live.cn
 --------------------------------
@@ -37,6 +36,7 @@ update log:
 2016-11-23 v1重构
 2016-11-29 重构完成MRS解码
 2016-11-30 修复定时任务bug
+2016-12-2 支持MRO解码
 
 ''')
 print('-' * 36)
@@ -140,6 +140,9 @@ class ConfigManager:
         print('-' * 26)
 
     def parse_process(self, filetype, parsetype_class):
+
+        """处理流程（文件格式判断、解压、parse xml）"""
+
         parse_file_list = self.parse_file_list[filetype]
         # 统计个数
         num_n = 0
@@ -160,7 +163,7 @@ class ConfigManager:
                     try:
                         tree = ET.parse(o)
                         parsetype_class.parser(tree)
-                    except Exception as error:
+                    except:
                         continue
                 elif n == 'gz':
                     try:
