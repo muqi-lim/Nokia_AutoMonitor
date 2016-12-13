@@ -32,9 +32,11 @@ print('''
 update log:
 
 2016-7-21 功能完成；
-2016-7-22 修复bug
-2016-09-09 完善功能，修复bug
-2016-12-4 增加对使用 FTP协议 服务器的支持
+2016-7-22 修复bug；
+2016-09-09 完善功能，修复bug；
+2016-12-4 增加对使用 FTP协议 服务器的支持；
+2016-12-13 修复历遍服务器上文件夹时出错的bug；
+2016-12-13 修复某些情况下调用外部exe失败问题；
 
 ''')
 print('-' * 36)
@@ -146,12 +148,12 @@ class Db:
                 T = paramiko.Transport(self.ip)
                 T.connect(username=self.user, password=self.pwd)
                 self.sftp = [paramiko.SFTPClient.from_transport(T), 'sftp']
-                print('>>> connect successful!\n')
+                print('>>> SFTP connect successful!\n')
                 self.status = 1
                 return 1
             except:
                 self.sftp = [ftplib.FTP(self.ip,self.user,self.pwd,timeout=5) ,'ftp']
-                print('>>> connect successful!\n')
+                print('>>> FTP connect successful!\n')
                 self.status = 1
                 return 1
         except:
@@ -195,6 +197,7 @@ class Db:
 
                     elif classify == '':
                         self.new_local_path = local_path
+                        ini.new_local_path = local_path
                     else:
                         print('>>> classify 设置非法，请检查！！')
                         sys.exit()
@@ -212,8 +215,6 @@ class Db:
                         elif self.sftp[1] == 'ftp':
                             with open(new_local_fullname, 'wb') as ff:
                                 self.sftp[0].retrbinary("RETR %s" %down_file,ff.write)
-
-
                     n += 1
 
 
@@ -246,7 +247,10 @@ class Getfiles:
                 for i in self.sftp[0].listdir_attr(path):
                     full_i = '/'.join((path, i.filename))
                     if stat.S_ISDIR(i.st_mode):
-                        walk(full_i)
+                        try:
+                            walk(full_i)
+                        except:
+                            pass
                     else:
                         self.filelist[0].append(full_i)
                         self.filelist[1] += 1
@@ -257,9 +261,14 @@ class Getfiles:
                         self.filelist[1] += 1
                     else:
                         try:
-                            walk(i)
+                            if 'lost+found' in i:
+                                pass
+                            else:
+                                walk(i)
                         except:
                             pass
+
+
 
         if path == ['']:
             print('>>> 未设置 remote_path ，请检查！')
@@ -304,12 +313,11 @@ class Progress:
         self.len_ = len_
 
     def progress(self, count_, filename=''):
-        bar_len = 24
+        bar_len = 10
         hashes = '|' * int(count_ / self.len_ * bar_len)
         spaces = '_' * (bar_len - len(hashes))
-        sys.stdout.write("\r  [ %s %s %d ]  %d%%  <%s>" %
-                         (str(count_), hashes + spaces, self.len_,
-                          int(count_ / self.len_ * 100), filename))
+        sys.stdout.write("\r%s %s %d  %s" %
+                         (str(count_), hashes + spaces, self.len_, filename))
         sys.stdout.flush()
 
 
@@ -358,6 +366,9 @@ if __name__ == '__main__':
                                 ini.prefix_ip, ini.prefix, ini.classify)
             print('\n')
             print('>>> Done')
+            print('\n')
+            print('-'*32)
+            print('-'*32)
         else:
             continue
 
