@@ -68,7 +68,7 @@ class Main:
             self.progress(self.file_n, progress_n, os.path.split(file_item)[-1])
             tree = ET.parse(gzip.open(file_item))
             self.parser(tree, parse_type)
-        self.progress(self.file_n, progress_n, 'all done')
+        self.progress(self.file_n, progress_n, 'parse finish!\n')
 
         print('>>> 解码完成，开始生成数据...')
         self.write()
@@ -79,9 +79,11 @@ class Main:
         if num_chose == 2 and type_chose[num_chose] in self.config['gather_type']:
             self.gather(13, 'hour')
             self.write()
+            num_chose += 1
         if num_chose == 3 and type_chose[num_chose] in self.config['gather_type']:
-            self.gather(9, 'day')
+            self.gather(10, 'day')
             self.write()
+            num_chose += 1
         if num_chose == 4 and type_chose[num_chose] in self.config['gather_type']:
             self.gather(0, 'none')
             self.write()
@@ -92,23 +94,24 @@ class Main:
             # 获取report时间
             if i.tag == 'FileHeader':
                 begin_time = '-'
-                end_time = '-'
+                # end_time = '-'
                 if type_1 == 'raw':
                     for j in i.iter(tag='BeginTime'):
                         begin_time = j.text
-                    for j in i.iter(tag='EndTime'):
-                        end_time = j.text
+                    # for j in i.iter(tag='EndTime'):
+                    #     end_time = j.text
                 elif type_1 == 'hour':
                     for j in i.iter(tag='BeginTime'):
                         begin_time = j.text[0:13]
-                    for j in i.iter(tag='EndTime'):
-                        end_time = j.text[0:13]
+                    # for j in i.iter(tag='EndTime'):
+                    #     end_time = j.text[0:13]
                 elif type_1 == 'day':
                     for j in i.iter(tag='BeginTime'):
-                        begin_time = j.text[0:9]
-                    for j in i.iter(tag='EndTime'):
-                        end_time = j.text[0:9]
-                report_time = '&'.join((begin_time, end_time))
+                        begin_time = j.text[0:10]
+                    # for j in i.iter(tag='EndTime'):
+                    #     end_time = j.text[0:10]
+                # report_time = '&'.join((begin_time, end_time))
+                report_time = begin_time
                 if report_time not in self.data:
                     self.data[report_time] = {'head': {}, 'data': {}}
 
@@ -172,27 +175,28 @@ class Main:
         #     self.head_list += [p for p in self.data[o]['head'].values()]
     def gather(self, num, type_2):
         gather_data = {}
-        # gather_data = {'gather_type': 'type_2'}
         for temp_day in self.data:
             if temp_day != 'gather_type':
-                gather_data_time = '-&-'
+                # gather_data_time = '-&-'
+                gather_data_time = '-'
                 if num != 0:
-                    star_time = temp_day.split('&')[0][:num]
-                    end_time = temp_day.split('&')[1][:num]
-                    gather_data_time = '&'.join((star_time, end_time))
+                    # star_time = temp_day.split('&')[0][:num]
+                    # end_time = temp_day.split('&')[1][:num]
+                    # gather_data_time = '&'.join((star_time, end_time))
+                    gather_data_time = temp_day[:num]
                 if gather_data_time not in gather_data:
-                    gather_data['gather_data_time'] = {'data': {}, 'head': {}}
+                    gather_data[gather_data_time] = {'data': {}, 'head': {}}
 
                 for temp_dn in self.data[temp_day]['data']:
-                    if temp_dn not in gather_data['gather_data_time']['data']:
-                        gather_data['gather_data_time']['data'][temp_dn] = {}
+                    if temp_dn not in gather_data[gather_data_time]['data']:
+                        gather_data[gather_data_time]['data'][temp_dn] = {}
                     for temp_head in self.head_list:
                         if temp_head in self.data[temp_day]['data'][temp_dn]:
-                            if temp_head in gather_data['gather_data_time']['data'][temp_dn]:
-                                gather_data['gather_data_time']['data'][temp_dn][temp_head] += self.data[
+                            if temp_head in gather_data[gather_data_time]['data'][temp_dn]:
+                                gather_data[gather_data_time]['data'][temp_dn][temp_head] += self.data[
                                     temp_day]['data'][temp_dn][temp_head]
                             else:
-                                gather_data['gather_data_time']['data'][temp_dn][temp_head] = self.data[
+                                gather_data[gather_data_time]['data'][temp_dn][temp_head] = self.data[
                                     temp_day]['data'][temp_dn][temp_head]
         gather_data['gather_type'] = type_2
         self.data = gather_data
@@ -201,14 +205,16 @@ class Main:
         self.head_list = sorted(list(set(self.head_list)))
         filename = ''.join(('pm_', self.data['gather_type'], '.csv'))
         with open(os.path.join(self.config['target_path'][0], filename), 'w') as f:
-            f.write(','.join(('STAR_TIME', 'END_TIME', 'ENB_ID', 'ENB_CELL_ID', 'CELL_NAME')))
+            # f.write(','.join(('STAR_TIME', 'END_TIME', 'ENB_ID', 'ENB_CELL_ID', 'CELL_NAME')))
+            f.write(','.join(('STAR_TIME', 'ENB_ID', 'ENB_CELL_ID', 'CELL_NAME')))
             f.write(',')
             f.write(','.join(self.head_list))
             f.write('\n')
             for temp_data in self.data:
                 if temp_data != 'gather_type':
                     for temp_dn in self.data[temp_data]['data']:
-                        f.write(','.join((temp_data.replace('&', ','), temp_dn.replace('&', ','))))
+                        # f.write(','.join((temp_data.replace('&', ','), temp_dn.replace('&', ','))))
+                        f.write(','.join((temp_data, temp_dn.replace('&', ','))))
                         f.write(',')
                         for temp_head in self.head_list:
                             if temp_head in self.data[temp_data]['data'][temp_dn]:
@@ -219,7 +225,13 @@ class Main:
                         f.write('\n')
 
 if __name__ == '__main__':
+    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
+    star_time = time.time()
     main = Main()
     print('>>> 开始解码...')
     main.circuit()
-    print('>>> 完成，结果存放目录：', main.config['target_path'])
+    print('-' * 25)
+    print('>>> 完成！PM解码结果保存在此文件夹:：', main.config['target_path'][0])
+    print('-' * 25)
+    print('>>> 历时：', time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(time.time() - star_time)))
+    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
