@@ -37,6 +37,7 @@ update log:
 2016-11-29 重构完成MRS解码
 2016-11-30 修复定时任务bug
 2016-12-2 支持MRO解码
+2016-12-29 新增解码MRO_EARFCN表，统计采集到的各个邻区频点的RSRP段信息；
 
 ''')
 print('-' * 36)
@@ -385,6 +386,7 @@ class MroParser:
     def overlap(self, k, overlap_num, overlap, overlap_ncell):
         overlap_db = int(overlap[0])
         overlap_ncell_rsrp = int(overlap_ncell[0])
+        id_temp = k.attrib['id']
         if (self.l_list[11] != 0) and (
                     self.l_list[9] >= (140 + overlap_ncell_rsrp)) and (
                     (self.l_list[9] - self.l_list[0]) >= overlap_db) and (
@@ -393,27 +395,27 @@ class MroParser:
             if overlap_num == 0:
                 temp_overlap_ncell_rsrp = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp)))
                 try:
-                    self.data_data[k.attrib['id']][temp_overlap_ncell_rsrp] += 1
+                    self.data_data[id_temp][temp_overlap_ncell_rsrp] += 1
                 except:
-                    self.data_data[k.attrib['id']][temp_overlap_ncell_rsrp] = 1
+                    self.data_data[id_temp][temp_overlap_ncell_rsrp] = 1
                 overlap_num = 1
 
             temp_s_cell_rsrp = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp), 's_cell_rsrp'))
             temp_n_cell_rsrp = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp), 'n_cell_rsrp'))
             temp_sctadv = '_'.join(('overlap', str(overlap_db), str(overlap_ncell_rsrp), 'ScTadv'))
             try:
-                self.data_data[k.attrib['id']][temp_s_cell_rsrp] += self.l_list[0]
-                self.data_data[k.attrib['id']][temp_s_cell_rsrp] //= 2
+                self.data_data[id_temp][temp_s_cell_rsrp] += self.l_list[0]
+                self.data_data[id_temp][temp_s_cell_rsrp] //= 2
 
-                self.data_data[k.attrib['id']][temp_n_cell_rsrp] += self.l_list[9]
-                self.data_data[k.attrib['id']][temp_n_cell_rsrp] //= 2
+                self.data_data[id_temp][temp_n_cell_rsrp] += self.l_list[9]
+                self.data_data[id_temp][temp_n_cell_rsrp] //= 2
 
-                self.data_data[k.attrib['id']][temp_sctadv] += self.l_list[2]
-                self.data_data[k.attrib['id']][temp_sctadv] //= 2
+                self.data_data[id_temp][temp_sctadv] += self.l_list[2]
+                self.data_data[id_temp][temp_sctadv] //= 2
             except:
-                self.data_data[k.attrib['id']][temp_s_cell_rsrp] = self.l_list[0]
-                self.data_data[k.attrib['id']][temp_n_cell_rsrp] = self.l_list[9]
-                self.data_data[k.attrib['id']][temp_sctadv] = self.l_list[2]
+                self.data_data[id_temp][temp_s_cell_rsrp] = self.l_list[0]
+                self.data_data[id_temp][temp_n_cell_rsrp] = self.l_list[9]
+                self.data_data[id_temp][temp_sctadv] = self.l_list[2]
         return overlap_num
 
     def ecid_ecid(self, k, n_cell_earfcn_pci):
@@ -506,10 +508,10 @@ class MroParser:
 
     def earfcn_pci_cellid_relate(self):
 
-        """建立earfcn pci cellid 索引表"""
+        """读取基础数据，建立earfcn pci cellid 索引表"""
 
         f = open(os.path.join(config_manager.main_path, 'enb_basedat.csv'), encoding='utf-8-sig')
-        basedatas = [i.rstrip().split(',') for i in f.readlines()]
+        basedatas = [i.strip().split(',') for i in f.readlines()]
 
         self.earfcn_pci_cellid = {}
         self.enbid_list = {}
@@ -562,7 +564,37 @@ class MroParser:
 
         return min_cell, min_stance
 
+    @staticmethod
+    def rsrp_region(rsrp):
+        rsrp_region_dict = {
+            '19': 'RSRP_00', '20': 'RSRP_01', '21': 'RSRP_01', '22': 'RSRP_01', '23': 'RSRP_01', '24': 'RSRP_01',
+            '25': 'RSRP_02', '26': 'RSRP_03', '27': 'RSRP_04', '28': 'RSRP_05', '29': 'RSRP_06', '30': 'RSRP_07',
+            '31': 'RSRP_08', '32': 'RSRP_09', '33': 'RSRP_10', '34': 'RSRP_11', '35': 'RSRP_12', '36': 'RSRP_13',
+            '37': 'RSRP_14', '38': 'RSRP_15', '39': 'RSRP_16', '40': 'RSRP_17', '41': 'RSRP_18', '42': 'RSRP_19',
+            '43': 'RSRP_20', '44': 'RSRP_21', '45': 'RSRP_22', '46': 'RSRP_23', '47': 'RSRP_24', '48': 'RSRP_25',
+            '49': 'RSRP_26', '50': 'RSRP_27', '51': 'RSRP_28', '52': 'RSRP_29', '53': 'RSRP_30', '54': 'RSRP_31',
+            '55': 'RSRP_32', '56': 'RSRP_33', '57': 'RSRP_34', '58': 'RSRP_35', '59': 'RSRP_36', '60': 'RSRP_37',
+            '61': 'RSRP_37', '62': 'RSRP_38', '63': 'RSRP_38', '64': 'RSRP_39', '65': 'RSRP_39', '66': 'RSRP_40',
+            '67': 'RSRP_40', '68': 'RSRP_41', '69': 'RSRP_41', '70': 'RSRP_42', '71': 'RSRP_42', '72': 'RSRP_43',
+            '73': 'RSRP_43', '74': 'RSRP_44', '75': 'RSRP_44', '76': 'RSRP_45', '77': 'RSRP_45', '78': 'RSRP_46',
+            '79': 'RSRP_46', '80': 'RSRP_47'
+        }
+        rsrp_temp = int(rsrp)
+        if 19 <= rsrp_temp < 80:
+            rsrp_temp = str(rsrp_temp)
+        elif rsrp_temp < 19:
+            rsrp_temp = '19'
+        elif rsrp_temp >= 80:
+            rsrp_temp = '80'
+        return rsrp_region_dict[rsrp_temp]
+
     def parser(self, tree):
+        # 获取重叠覆盖率门限并重命名
+        overlap_db_1 = config_manager.config_mro['overlap_db_1']
+        overlap_ncell_rsrp_1 = config_manager.config_mro['overlap_ncell_rsrp_1']
+        overlap_db_2 = config_manager.config_mro['overlap_db_2']
+        overlap_ncell_rsrp_2 = config_manager.config_mro['overlap_ncell_rsrp_2']
+
         # 获取表头，仅允许一次
         if self.head_counter == 0:
             self.get_parser_head(tree)
@@ -576,42 +608,57 @@ class MroParser:
             if (root[1][measurement_len_ob][0].tag == 'smr') and (
                         root[1][measurement_len_ob][0].text[:12] == 'MR.LteScRSRP'):
                 for k in root[1][measurement_len_ob].iter('object'):
-                    if k.attrib['id'] not in self.data_data:
-                        self.data_data[k.attrib['id']] = {'s_samplint': 0, 'ECID_ECID': {}}
+                    id_temp = k.attrib['id']
+                    if id_temp not in self.data_data:
+                        self.data_data[id_temp] = {
+                            's_samplint': 0,
+                            'ECID_ECID': {},
+                            'earfcn': {'samplint': {}, 's_full_samplint': {}}
+                        }
                     l_num = 0
                     overlap_num_1 = 0
                     overlap_num_2 = 0
+                    rsrp_earfcn_dict = {}
                     for l in k:
                         self.l_list = numpy.array(list(map(int, l.text.replace('NIL', '0').rstrip().split(' '))))
                         # 计算主小区采样点及采样信息
                         if l_num == 0:
-                            self.data_data[k.attrib['id']]['s_samplint'] += 1
+                            self.data_data[id_temp]['s_samplint'] += 1
                             try:
-                                self.data_data[k.attrib['id']]['s_basic'] += numpy.concatenate((
+                                self.data_data[id_temp]['s_basic'] += numpy.concatenate((
                                     self.l_list[0:9], self.l_list[20:22], self.l_list[23:27]))
-                                self.data_data[k.attrib['id']]['s_basic'] /= 2
+                                self.data_data[id_temp]['s_basic'] /= 2
                             except:
-                                self.data_data[k.attrib['id']]['s_basic'] = numpy.concatenate(
+                                self.data_data[id_temp]['s_basic'] = numpy.concatenate(
                                     (self.l_list[0:9], self.l_list[20:22], self.l_list[23:27]))
+
+                            # 统计主小区全量的移动测量数据
+                            rsrp_tmp = self.rsrp_region(self.l_list[0])
+                            try:
+                                self.data_data[id_temp]['earfcn']['s_full_samplint'][rsrp_tmp] += 1
+                            except:
+                                self.data_data[id_temp]['earfcn']['s_full_samplint'][rsrp_tmp] = 1
+
                             l_num = 1
 
                         # 计算重叠覆盖率_1
-                        overlap_db_1 = config_manager.config_mro['overlap_db_1']
-                        overlap_ncell_rsrp_1 = config_manager.config_mro['overlap_ncell_rsrp_1']
                         if overlap_db_1 != '' and overlap_ncell_rsrp_1 != '':
                             overlap_num_1 = self.overlap(k, overlap_num_1, overlap_db_1, overlap_ncell_rsrp_1)
 
                         # 计算重叠覆盖率_2
-                        overlap_db_2 = config_manager.config_mro['overlap_db_2']
-                        overlap_ncell_rsrp_2 = config_manager.config_mro['overlap_ncell_rsrp_2']
                         if overlap_db_2 != '' and overlap_ncell_rsrp_2 != '':
                             overlap_num_2 = self.overlap(k, overlap_num_2, overlap_db_2, overlap_ncell_rsrp_2)
 
-                        # 计算与邻区关系ECID
-                        n_cell_earfcn_pci = '_'.join(list(map(str, self.l_list[11:13])))
-                        if self.l_list[11] != 0:
-                            if n_cell_earfcn_pci not in self.data_data[k.attrib['id']]['ECID_ECID']:
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci] = {
+                        # 计算与邻区关系ECID 及 频点关系
+                        n_earfcn = self.l_list[11]
+                        if n_earfcn != 0:
+
+                            n_cell_earfcn_pci = '_'.join(list(map(str, self.l_list[11:13])))
+
+                            # 与邻区关系ECID
+
+                            if n_cell_earfcn_pci not in self.data_data[id_temp]['ECID_ECID']:
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci] = {
                                     'ncrsrp': self.l_list[9], 'scrsrp': self.l_list[0], 'ScTadv': self.l_list[2],
                                     'n_samplint': 0, '<-10db': 0, '-10db': 0, '-9db': 0, '-8db': 0, '-7db': 0,
                                     '-6db': 0, '-5db': 0, '-4db': 0, '-3db': 0, '-2db': 0, '-1db': 0, '0db': 0,
@@ -619,19 +666,43 @@ class MroParser:
                                     '8db': 0, '9db': 0, '10db': 0, '>10db': 0}
                                 self.ecid_ecid(k, n_cell_earfcn_pci)
                             else:
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci][
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci][
                                     'ncrsrp'] += self.l_list[9]
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['ncrsrp'] /= 2
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci]['ncrsrp'] /= 2
 
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci][
-                                    'scrsrp'] += self.l_list[0]
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['scrsrp'] /= 2
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci]['scrsrp'] += self.l_list[0]
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci]['scrsrp'] /= 2
 
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci][
-                                    'ScTadv'] += self.l_list[2]
-                                self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['ScTadv'] /= 2
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci]['ScTadv'] += self.l_list[2]
+                                self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci]['ScTadv'] /= 2
                                 self.ecid_ecid(k, n_cell_earfcn_pci)
-                            self.data_data[k.attrib['id']]['ECID_ECID'][n_cell_earfcn_pci]['n_samplint'] += 1
+                            # 统计邻区采样点
+                            self.data_data[id_temp]['ECID_ECID'][n_cell_earfcn_pci]['n_samplint'] += 1
+
+                            # 计算非全量的移动测量数据
+                            try:
+                                rsrp_earfcn_dict[n_earfcn][0].append(int(self.l_list[9]))
+                            except:
+                                rsrp_earfcn_dict[n_earfcn] = [[int(self.l_list[9])], self.l_list[0]]
+
+                    # 汇总计算非全量的移动测量数据
+                    if len(rsrp_earfcn_dict) != 0:
+                        for i in rsrp_earfcn_dict.keys():
+                            rsrp_region_temp_n = self.rsrp_region(str(max(rsrp_earfcn_dict[i][0])))
+                            rsrp_region_temp_s = self.rsrp_region(str(rsrp_earfcn_dict[i][1]))
+                            try:
+                                self.data_data[id_temp]['earfcn']['samplint'][i][0][rsrp_region_temp_n] += 1
+                            except:
+                                try:
+                                    self.data_data[id_temp]['earfcn']['samplint'][i][0][rsrp_region_temp_n] = 1
+                                except:
+                                    self.data_data[id_temp]['earfcn']['samplint'][i] = [{rsrp_region_temp_n: 1},
+                                                                                        {}]
+                            try:
+                                self.data_data[id_temp]['earfcn']['samplint'][i][1][rsrp_region_temp_s] += 1
+                            except:
+                                self.data_data[id_temp]['earfcn']['samplint'][i][1][rsrp_region_temp_s] = 1
+
                 # 获取到所需要的measurement后，则退出循环
                 break
 
@@ -643,7 +714,8 @@ class MroParser:
                                 str(config_manager.config_mro['overlap_ncell_rsrp_1'][0]), 'n_cell_rsrp'))
         overlap_1_ta = '_'.join(
             ('overlap', str(config_manager.config_mro['overlap_db_1'][0]), str(config_manager.config_mro[
-                                                                                'overlap_ncell_rsrp_1'][0]), 'ScTadv'))
+                                                                                   'overlap_ncell_rsrp_1'][0]),
+             'ScTadv'))
         overlap_1_samplint = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_1'][0]),
                                        str(config_manager.config_mro['overlap_ncell_rsrp_1'][0]), 'samplint'))
         overlap_2_samplint = '_'.join(('overlap', str(config_manager.config_mro['overlap_db_2'][0]),
@@ -654,14 +726,16 @@ class MroParser:
                                 str(config_manager.config_mro['overlap_ncell_rsrp_2'][0]), 'n_cell_rsrp'))
         overlap_2_ta = '_'.join(
             ('overlap', str(config_manager.config_mro['overlap_db_2'][0]), str(config_manager.config_mro[
-                                                                                'overlap_ncell_rsrp_2'][0]), 'ScTadv'))
+                                                                                   'overlap_ncell_rsrp_2'][0]),
+             'ScTadv'))
         # 与解码结果保持一致
         overlap_1_sam = '_'.join(
             ('overlap', str(config_manager.config_mro['overlap_db_1'][0]), str(config_manager.config_mro[
-                                                                                'overlap_ncell_rsrp_1'][0])))
+                                                                                   'overlap_ncell_rsrp_1'][0])))
         overlap_2_sam = '_'.join(
             ('overlap', str(config_manager.config_mro['overlap_db_2'][0]), str(config_manager.config_mro[
-                                                                                'overlap_ncell_rsrp_2'][0])))
+                                                                                   'overlap_ncell_rsrp_2'][0])))
+
         # 生成文件
         mro_main_f = open(''.join((config_manager.config_main['target_path'][0], '\\', 'MRO_main.csv')), 'w')
         # 写入表头
@@ -704,7 +778,7 @@ class MroParser:
         mro_main_f.write('s_ECID')
         mro_main_f.write(',ENB_CELL,s_earfcn,s_pci,n_ENB_CELL,')
         mro_main_f.write('n_earfcn,n_pci,s_n_distance(m)')
-        mro_main_f.write(',Scrsrp,ScTadv,n_samplint,ncrsrp,<-10db,-10db,-9db,-8db,-7db,-6db,-5db,-4db,-3db,-2db,-1db,'
+        mro_main_f.write(',Scrsrp,ScTadv,n_samplint,Ncrsrp,<-10db,-10db,-9db,-8db,-7db,-6db,-5db,-4db,-3db,-2db,-1db,'
                          '0db,1db,2db,3db,4db,5db,6db,7db,8db,9db,10db,>10db\n')
         # 写入结果文件
         for c in self.data_data:
@@ -736,6 +810,86 @@ class MroParser:
                     mro_main_f.write(str(self.data_data[c]['ECID_ECID'][d][e]))
                     mro_main_f.write(',')
                 mro_main_f.write('\n')
+
+        with open(''.join((config_manager.config_main['target_path'][0], '\\', 'MRO_EARFCN.csv')), 'w') as mro_earfcn_f:
+            # 写入表头
+            head_list_full_s = ['s_FULL_RSRP_00', 's_FULL_RSRP_01', 's_FULL_RSRP_02', 's_FULL_RSRP_03',
+                                's_FULL_RSRP_04', 's_FULL_RSRP_05', 's_FULL_RSRP_06', 's_FULL_RSRP_07',
+                                's_FULL_RSRP_08', 's_FULL_RSRP_09', 's_FULL_RSRP_10', 's_FULL_RSRP_11',
+                                's_FULL_RSRP_12', 's_FULL_RSRP_13', 's_FULL_RSRP_14', 's_FULL_RSRP_15',
+                                's_FULL_RSRP_16', 's_FULL_RSRP_17', 's_FULL_RSRP_18', 's_FULL_RSRP_19',
+                                's_FULL_RSRP_20', 's_FULL_RSRP_21', 's_FULL_RSRP_22', 's_FULL_RSRP_23',
+                                's_FULL_RSRP_24', 's_FULL_RSRP_25', 's_FULL_RSRP_26', 's_FULL_RSRP_27',
+                                's_FULL_RSRP_28', 's_FULL_RSRP_29', 's_FULL_RSRP_30', 's_FULL_RSRP_31',
+                                's_FULL_RSRP_32', 's_FULL_RSRP_33', 's_FULL_RSRP_34', 's_FULL_RSRP_35',
+                                's_FULL_RSRP_36', 's_FULL_RSRP_37', 's_FULL_RSRP_38', 's_FULL_RSRP_39',
+                                's_FULL_RSRP_40', 's_FULL_RSRP_41', 's_FULL_RSRP_42', 's_FULL_RSRP_43',
+                                's_FULL_RSRP_44', 's_FULL_RSRP_45', 's_FULL_RSRP_46', 's_FULL_RSRP_47']
+            head_list_s = ['s_RSRP_00', 's_RSRP_01', 's_RSRP_02', 's_RSRP_03', 's_RSRP_04', 's_RSRP_05', 's_RSRP_06',
+                           's_RSRP_07', 's_RSRP_08', 's_RSRP_09', 's_RSRP_10', 's_RSRP_11', 's_RSRP_12', 's_RSRP_13',
+                           's_RSRP_14', 's_RSRP_15', 's_RSRP_16', 's_RSRP_17', 's_RSRP_18', 's_RSRP_19', 's_RSRP_20',
+                           's_RSRP_21', 's_RSRP_22', 's_RSRP_23', 's_RSRP_24', 's_RSRP_25', 's_RSRP_26', 's_RSRP_27',
+                           's_RSRP_28', 's_RSRP_29', 's_RSRP_30', 's_RSRP_31', 's_RSRP_32', 's_RSRP_33', 's_RSRP_34',
+                           's_RSRP_35', 's_RSRP_36', 's_RSRP_37', 's_RSRP_38', 's_RSRP_39', 's_RSRP_40', 's_RSRP_41',
+                           's_RSRP_42', 's_RSRP_43', 's_RSRP_44', 's_RSRP_45', 's_RSRP_46', 's_RSRP_47']
+            head_list_n = ['n_RSRP_00', 'n_RSRP_01', 'n_RSRP_02', 'n_RSRP_03', 'n_RSRP_04', 'n_RSRP_05', 'n_RSRP_06',
+                           'n_RSRP_07', 'n_RSRP_08', 'n_RSRP_09', 'n_RSRP_10', 'n_RSRP_11', 'n_RSRP_12', 'n_RSRP_13',
+                           'n_RSRP_14', 'n_RSRP_15', 'n_RSRP_16', 'n_RSRP_17', 'n_RSRP_18', 'n_RSRP_19', 'n_RSRP_20',
+                           'n_RSRP_21', 'n_RSRP_22', 'n_RSRP_23', 'n_RSRP_24', 'n_RSRP_25', 'n_RSRP_26', 'n_RSRP_27',
+                           'n_RSRP_28', 'n_RSRP_29', 'n_RSRP_30', 'n_RSRP_31', 'n_RSRP_32', 'n_RSRP_33', 'n_RSRP_34',
+                           'n_RSRP_35', 'n_RSRP_36', 'n_RSRP_37', 'n_RSRP_38', 'n_RSRP_39', 'n_RSRP_40', 'n_RSRP_41',
+                           'n_RSRP_42', 'n_RSRP_43', 'n_RSRP_44', 'n_RSRP_45', 'n_RSRP_46', 'n_RSRP_47']
+            mro_earfcn_f.write(','.join(('ECID', 'ENB_CELL', 'n_EARFCN')))
+            mro_earfcn_f.write(',')
+            mro_earfcn_f.write(','.join(head_list_full_s))
+            mro_earfcn_f.write(',')
+            mro_earfcn_f.write(','.join(head_list_s))
+            mro_earfcn_f.write(',')
+            mro_earfcn_f.write(','.join(head_list_n))
+            mro_earfcn_f.write('\n')
+            head_list_all = ['RSRP_00', 'RSRP_01', 'RSRP_02', 'RSRP_03', 'RSRP_04', 'RSRP_05', 'RSRP_06',
+                             'RSRP_07', 'RSRP_08', 'RSRP_09', 'RSRP_10', 'RSRP_11', 'RSRP_12', 'RSRP_13',
+                             'RSRP_14', 'RSRP_15', 'RSRP_16', 'RSRP_17', 'RSRP_18', 'RSRP_19', 'RSRP_20',
+                             'RSRP_21', 'RSRP_22', 'RSRP_23', 'RSRP_24', 'RSRP_25', 'RSRP_26', 'RSRP_27',
+                             'RSRP_28', 'RSRP_29', 'RSRP_30', 'RSRP_31', 'RSRP_32', 'RSRP_33', 'RSRP_34',
+                             'RSRP_35', 'RSRP_36', 'RSRP_37', 'RSRP_38', 'RSRP_39', 'RSRP_40', 'RSRP_41',
+                             'RSRP_42', 'RSRP_43', 'RSRP_44', 'RSRP_45', 'RSRP_46', 'RSRP_47']
+            # 写入结果
+            for id_temp in self.data_data:
+                enb_cellid = '_'.join((str(int(id_temp) // 256), str(int(id_temp) % 256)))
+                for earfcn_temp in self.data_data[id_temp]['earfcn']['samplint']:
+                    mro_earfcn_f.write(id_temp)
+                    mro_earfcn_f.write(',')
+                    mro_earfcn_f.write(enb_cellid)
+                    mro_earfcn_f.write(',')
+                    mro_earfcn_f.write(str(earfcn_temp))
+                    mro_earfcn_f.write(',')
+                    for head_list_temp in head_list_all:
+                        try:
+                            mro_earfcn_f.write(str(self.data_data[id_temp]['earfcn']['s_full_samplint'][
+                                                       head_list_temp]))
+                        except:
+                            mro_earfcn_f.write('0')
+                        mro_earfcn_f.write(',')
+
+                    for head_list_temp in head_list_all:
+                        try:
+                            mro_earfcn_f.write(
+                                str(self.data_data[id_temp]['earfcn']['samplint'][earfcn_temp][1][head_list_temp]))
+                        except:
+                            mro_earfcn_f.write('0')
+                        mro_earfcn_f.write(',')
+
+                    for head_list_temp in head_list_all:
+                        try:
+                            mro_earfcn_f.write(
+                                str(self.data_data[id_temp]['earfcn']['samplint'][earfcn_temp][0][head_list_temp]))
+                        except:
+                            mro_earfcn_f.write('0')
+                        mro_earfcn_f.write(',')
+
+                    mro_earfcn_f.write('\n')
+
 
 if __name__ == '__main__':
     star_time = time.time()
