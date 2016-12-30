@@ -9,45 +9,45 @@ import tarfile
 import time
 import math
 import multiprocessing
-
 # import copy
-#
-# ##############################################################################
-# print("""
-# --------------------------------
-#     Welcome to use tools!
-#     Author : lin_xu_teng
-#     E_mail : lxuteng@live.cn
-# --------------------------------
-# """)
-# print('\n')
-# auth_time = int(time.strftime('%Y%m%d', time.localtime(time.time())))
-# if auth_time > 20180101:
-#     print('\n')
-#     print('-' * 64)
-#     print('试用版本已过期，请联系作者！')
-#     print('-' * 64)
-#     print('\n')
-#     input()
-#     sys.exit()
-#
-# print('''
-# update log:
-#
-# 2016-11-23 v1重构
-# 2016-11-29 重构完成MRS解码
-# 2016-11-30 修复定时任务bug
-# 2016-12-2 支持MRO解码
-#
-# ''')
-# print('-' * 36)
-# print('      >>>   starting   <<<')
-# print('-' * 36)
-# print('\n')
-# time.sleep(1)
-#
-#
-# ##############################################################################
+
+
+def copyright():
+    print("""
+    --------------------------------
+        Welcome to use tools!
+        Author : lin_xu_teng
+        E_mail : lxuteng@live.cn
+    --------------------------------
+    """)
+    print('\n')
+    auth_time = int(time.strftime('%Y%m%d', time.localtime(time.time())))
+    if auth_time > 20180101:
+        print('\n')
+        print('-' * 64)
+        print('试用版本已过期，请联系作者！')
+        print('-' * 64)
+        print('\n')
+        input()
+        sys.exit()
+
+    print('''
+    update log:
+
+    2016-11-23 v1重构
+    2016-11-29 重构完成MRS解码
+    2016-11-30 修复定时任务bug
+    2016-12-2 支持MRO解码
+    2016-12-29 mrs支持多进程处理数据，解码效率大幅提升；
+    2016-12-30 处理mrs时只能生成 MR.RSRP 表的bug；
+
+    ''')
+    print('-' * 36)
+    print('      >>>   starting   <<<')
+    print('-' * 36)
+    print('\n')
+    time.sleep(1)
+
 ################################################################################
 # Module multiprocessing is organized differently in Python 3.4+
 try:
@@ -106,7 +106,6 @@ class ConfigManager:
     def get_main_config(self):
 
         """获取 main 配置文件"""
-
         for a in self.cf.options('main'):
             self.config_main[a] = self.cf.get('main', a).split(',')
 
@@ -209,8 +208,7 @@ class ConfigManager:
         jobs = []
         for n in self.parse_file_list[filetype]:
             for o in self.parse_file_list[filetype][n]:
-                # 进度条
-                job = process_pool.apply_async(self.child_parse_process, args=(n, o, process_queue))
+                job = process_pool.apply_async(self.child_parse_process, args=(filetype, n, o, process_queue))
                 jobs.append(job)
         for job in jobs:
             job.get()
@@ -224,12 +222,17 @@ class ConfigManager:
         self.mrs_parse_sheet = process_listen.get()[2]
         # print(parsetype_class.data_data)
 
-    def child_parse_process(self, child_type, child_o, queue):
+    def child_parse_process(self, mr_type, child_type, child_o, queue):
+        # 进度条
         queue.put(['prog', child_o])
+
         if child_type == 'xml':
             try:
                 tree = ET.parse(child_o)
-                self.mrs_parser(tree, queue)
+                if mr_type == 'mrs':
+                    self.mrs_parser(tree, queue)
+                elif mr_type == 'mro':
+                    self.mro_parser(tree, queue)
             except:
                 pass
         elif child_type == 'gz':
@@ -241,13 +244,22 @@ class ConfigManager:
                         temp_file_suffix = temp_file.split('.')[-1].lower()
                         if temp_file_suffix == 'gz':
                             tree = ET.parse(gzip.open(temp_file_tar_f))
-                            self.mrs_parser(tree, queue)
+                            if mr_type == 'mrs':
+                                self.mrs_parser(tree, queue)
+                            elif mr_type == 'mro':
+                                self.mro_parser(tree, queue)
                         elif temp_file_suffix == 'xml':
                             tree = ET.parse(temp_file_tar_f)
-                            self.mrs_parser(tree, queue)
+                            if mr_type == 'mrs':
+                                self.mrs_parser(tree, queue)
+                            elif mr_type == 'mro':
+                                self.mro_parser(tree, queue)
                 except:
                     tree = ET.parse(gzip.open(child_o))
-                    self.mrs_parser(tree, queue)
+                    if mr_type == 'mrs':
+                        self.mrs_parser(tree, queue)
+                    elif mr_type == 'mro':
+                        self.mro_parser(tree, queue)
             except:
                 pass
 
@@ -355,7 +367,6 @@ class ConfigManager:
 
     def mrs_parser(self, tree, queue):
         # 获取处理表格及表头，仅允许一次
-        # TODO 此变量未能返回主进程，需优化
         if self.mrs_head_counter == 0:
             self.mrs_get_parser_sheet(tree, queue)
             self.mrs_get_parser_head(tree, queue)
@@ -370,7 +381,7 @@ class ConfigManager:
                 report_time = temp_file_header.attrib['reportTime'][:temp_file_header.attrib['reportTime'].find(':')]
                 break
         for u in tree.iter('measurement'):
-            if u.attrib['mrName'] in self.config_mrs['mrs_parse_sheet'][0]:
+            if u.attrib['mrName'] in self.config_mrs['mrs_parse_sheet']:
                 if u.attrib['mrName'] not in data_data:
                     data_data[u.attrib['mrName']] = {}
                 if report_time not in data_data[u.attrib['mrName']]:
@@ -837,6 +848,7 @@ class MroParser:
                 mro_main_f.write('\n')
 
 if __name__ == '__main__':
+    copyright()
     multiprocessing.freeze_support()
     star_time = time.time()
     print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
