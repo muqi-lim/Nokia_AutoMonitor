@@ -38,6 +38,7 @@ print('''
 update log:
 
 2016-11-14 添加最大用户数检测通报；
+2017-1-24 根据春节保障内容添加显示字段，方便监控时使用；
 
 ''')
 
@@ -260,28 +261,62 @@ class Db:
                              'esrvcc成功率'.lower(): ('', ''),
                              'ESRVCC请求次数'.lower(): ('', ''),
                              'ESRVCC成功次数'.lower(): ('', ''),
-                             'ESRVCC失败次数'.lower(): ('!=', '0')}
+                             'ESRVCC失败次数'.lower(): ('!=', '0'),
+                             'QCI1话务量Erl'.lower(): ('', ''),
+                             'QCI2话务量Erl'.lower(): ('', ''),
+                             'QCI1流量Mb'.lower(): ('', ''),
+                             'QCI2流量Mb'.lower(): ('', ''),
+                             'QCI1最大用户数'.lower(): ('', ''),
+                             'QCI2最大用户数'.lower(): ('', ''),
+                             }
 
         def top_qci1connect():
             self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
                              'qci1_erab建立成功率'.lower(): ('', ''),
-                             'qci1_erab建立成功次数'.lower(): ('', ''),
-                             'qci1_erab建立失败次数'.lower(): ('!=', '0')}
+                             'qci1_erab建立请求次数'.lower(): ('', ''),
+                             'qci1_erab建立失败次数'.lower(): ('!=', '0'),
+                             'QCI1话务量Erl'.lower(): ('', ''),
+                             'QCI1流量Mb'.lower(): ('', ''),
+                             'QCI1最大用户数'.lower(): ('', ''),
+                             }
+
+        def top_qci2connect():
+            self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
+                             'qci2_erab建立成功率'.lower(): ('', ''),
+                             'qci2_erab建立请求次数'.lower(): ('', ''),
+                             'qci2_erab建立失败次数'.lower(): ('!=', '0'),
+                             'QCI2话务量Erl'.lower(): ('', ''),
+                             'QCI2流量Mb'.lower(): ('', ''),
+                             'QCI2最大用户数'.lower(): ('', ''),
+                             }
 
         def top_qci1drop():
             self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
                              'QCI1掉线率小区级'.lower(): ('', ''),
                              'QCI1掉线分母小区级'.lower(): ('', ''),
-                             'QCI1掉线次数'.lower(): ('!=', '0')}
+                             'QCI1掉线次数'.lower(): ('!=', '0'),
+                             'QCI1话务量Erl'.lower(): ('', ''),
+                             'QCI2话务量Erl'.lower(): ('', ''),
+                             'QCI1流量Mb'.lower(): ('', ''),
+                             'QCI2流量Mb'.lower(): ('', ''),
+                             'QCI1最大用户数'.lower(): ('', ''),
+                             'QCI2最大用户数'.lower(): ('', ''),
+                             }
 
         def top_rrcconnect():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
                              'RRC连接建立成功率'.lower(): ('', ''),
-                             'RRC连接建立成功次数'.lower(): ('', ''),
                              'RRC连接建立请求次数'.lower(): ('', ''),
                              'RRC连接建立失败次数'.lower(): ('!=', '0'),
                              '拥塞次数'.lower(): ('>', '0'),
+                             '控制面过负荷拥塞'.lower(): ('>', '0'),
+                             '用户面过负荷拥塞'.lower(): ('>', '0'),
+                             'PUCCH资源不足拥塞'.lower(): ('>', '0'),
+                             '最大RRC受限拥塞'.lower(): ('>', '0'),
+                             'MME过负荷拥塞'.lower(): ('>', '0'),
                              'RRC最大连接数'.lower(): ('', ''),
+                             '最大激活用户数'.lower(): ('', ''),
+                             '有效RRC连接最大数'.lower(): ('', ''),
                              'PUSCH_RIP'.lower(): ('>=', '-110')}
 
         def top_erabconnect():
@@ -362,6 +397,7 @@ class Db:
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
                         'top_qci1connect': top_qci1connect,
+                        'top_qci2connect': top_qci2connect,
                         'top_qci1drop': top_qci1drop,
                         'top_rrcconnect': top_rrcconnect,
                         'top_erabconnect': top_erabconnect,
@@ -437,7 +473,7 @@ class Html:
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <title>诺基亚日常监控报告_v1.2</title>
+                <title>诺基亚日常监控报告_v1.3</title>
             </head>
             <body>'''
 
@@ -466,7 +502,7 @@ class Html:
                 if range(j[k], db.kpirange[k]):
                     self.MIMEtext += '<font color="#ff0000"><b>'
                 if str(j[k]).count('.') == 1:
-                    self.MIMEtext += str(round(float(j[k]), 2))
+                    self.MIMEtext += str(round(float(j[k]), 3))
                 else:
                     self.MIMEtext += str(j[k])
                 if range(j[k], db.kpirange[k]):
@@ -553,11 +589,11 @@ class Report():
             html.body('h2', '  最大激活用户数检测')
 
             if type == 'hour':
-                html.body('h4', '   最近一小时最大激活用户数超过配置门限70%小区，请尽快扩容！')
+                html.body('h4', '   最近一小时最大激活用户数超过配置门限小区，请尽快扩容！')
             elif type == 'day':
-                html.body('h4', '   昨天最大激活用户数超过配置门限70%小区，请尽快扩容！')
+                html.body('h4', '   昨天最大激活用户数超过配置门限小区，请尽快扩容！')
             elif type == 'raw':
-                html.body('h4', '   最近15分钟最大激活用户数超过配置门限70%小区，请尽快扩容！')
+                html.body('h4', '   最近15分钟最大激活用户数超过配置门限小区，请尽快扩容！')
             html.table()
             self.topcelln += 1
 
@@ -583,6 +619,15 @@ class Report():
         db.displaydata(datatype='top_qci1connect')
         if len(db.dbdata) != 0:
             html.body('h3', '    ◎ qci1_erab建立成功率')
+            html.table()
+            self.topcelln += 1
+
+        # qci2_erab建立成功率
+        db.getdata(
+            ini.top_volte_sql, timetype='top', counter='qci2_erab建立失败次数')
+        db.displaydata(datatype='top_qci2connect')
+        if len(db.dbdata) != 0:
+            html.body('h3', '    ◎ qci2_erab建立成功率')
             html.table()
             self.topcelln += 1
 
@@ -679,7 +724,7 @@ class Report():
         db.getdata(ini.maxue, timetype='top')
         db.displaydata(datatype='maxue')
         if len(db.dbdata) != 0:
-            html.body('h4', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限70%，请尽快扩容！')
+            html.body('h4', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限，请尽快扩容！')
             html.table()
             self.topcelln += 1
 
@@ -720,7 +765,7 @@ if __name__ == '__main__':
         if ini.config['timetype'] == 'raw_monitor' and db_report.topcelln == 0:
             ini.main['actemail'] = '0'
 
-        # 发送邮件
+        # 发送邮件z
         if ini.main['actemail'] == '1':
             email = Email()
             email.loging()
