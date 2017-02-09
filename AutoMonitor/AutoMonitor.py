@@ -7,6 +7,7 @@ import configparser
 import time
 import datetime
 import cx_Oracle
+import subprocess
 # import prettytable
 # import copy
 # 邮件模块
@@ -18,7 +19,7 @@ print("""
 --------------------------------
     Welcome to use tools!
     Version : 1.2.0
-    Author : linxuteng
+    Author : lin_xu_teng
     E_mail : lxuteng@live.cn
 --------------------------------
 """)
@@ -39,6 +40,8 @@ update log:
 
 2016-11-14 添加最大用户数检测通报；
 2017-1-24 根据春节保障内容添加显示字段，方便监控时使用；
+2017-2-8 增加部分TOP小区字段；
+2017-2-9 新增自动关闭拥塞小区测量上报开关；
 
 ''')
 
@@ -51,7 +54,6 @@ time.sleep(1)
 
 
 ###############################################################################
-
 
 
 class Getini:
@@ -81,6 +83,7 @@ class Getini:
                 self.email[o] = o_child
 
         self.config = {}
+        self.autodisabledpmmeasurementdata = ''
         for i in self.cf.options('config'):
             self.config[i] = self.cf.get('config', i)
 
@@ -305,6 +308,7 @@ class Db:
 
         def top_rrcconnect():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
+                             'bts_version'.lower(): ('', ''),
                              'RRC连接建立成功率'.lower(): ('', ''),
                              'RRC连接建立请求次数'.lower(): ('', ''),
                              'RRC连接建立失败次数'.lower(): ('!=', '0'),
@@ -321,6 +325,7 @@ class Db:
 
         def top_erabconnect():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
+                             'bts_version'.lower(): ('', ''),
                              'ERAB建立成功率'.lower(): ('', ''),
                              'ERAB建立成功数'.lower(): ('', ''),
                              'ERAB建立请求数'.lower(): ('', ''),
@@ -329,6 +334,7 @@ class Db:
 
         def top_handover():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
+                             'bts_version'.lower(): ('', ''),
                              '切换成功率QQ'.lower(): ('', ''),
                              '切换成功次数'.lower(): ('', ''),
                              '切换请求次数ZB'.lower(): ('', ''),
@@ -338,6 +344,7 @@ class Db:
 
         def top_radiodrop():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
+                             'bts_version'.lower(): ('', ''),
                              '无线掉线率'.lower(): ('', ''),
                              '切换失败次数QQ'.lower(): ('!=', '0'),
                              '切换请求次数QQ'.lower(): ('', ''),
@@ -348,6 +355,7 @@ class Db:
 
         def top_erabdrop():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
+                             'bts_version'.lower(): ('', ''),
                              'ERAB掉线率'.lower(): ('', ''),
                              'ERAB掉线率分母'.lower(): ('', ''),
                              'ERAB掉线次数'.lower(): ('!=', '0'),
@@ -364,12 +372,20 @@ class Db:
 
         def overcrowding():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'sdate'.lower(): ('', ''),
+                             'bts_version'.lower(): ('', ''),
+                             'actDrx'.lower(): ('', ''),
                              'RRC连接建立成功率'.lower(): ('', ''),
                              'RRC连接建立请求次数'.lower(): ('', ''),
                              'RRC连接建立失败次数'.lower(): ('!=', '0'),
                              '拥塞次数'.lower(): ('>', '0'),
+                             '控制面过负荷拥塞'.lower(): ('>', '0'),
+                             '用户面过负荷拥塞'.lower(): ('>', '0'),
+                             'PUCCH资源不足拥塞'.lower(): ('>', '0'),
+                             '最大RRC受限拥塞'.lower(): ('>', '0'),
+                             'MME过负荷拥塞'.lower(): ('>', '0'),
                              'RRC最大连接数'.lower(): ('', ''),
+                             '最大激活用户数'.lower(): ('', ''),
+                             '有效RRC连接最大数'.lower(): ('', ''),
                              'PUSCH_RIP'.lower(): ('>=', '-110')}
 
         def alarm():
@@ -384,6 +400,8 @@ class Db:
             self.kpi_dict = {
                 'ENB_CELL'.lower(): ('', 'cellname'),
                 'VERSION'.lower(): ('', ''),
+                '带宽'.lower(): ('', ''),
+                'actDrx'.lower(): ('', ''),
                 '最大激活用户数'.lower(): ('', ''),
                 '门限值'.lower(): ('', ''),
                 '配置最大激活用户数'.lower(): ('', ''),
@@ -473,7 +491,7 @@ class Html:
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <title>诺基亚日常监控报告_v1.3</title>
+                <title>诺基亚日常监控报告_v1.5</title>
             </head>
             <body>'''
 
@@ -550,7 +568,7 @@ def range(value, list):
         pass
 
 
-class Report():
+class Report:
     def __init__(self):
         # 如果改时段没有top小区，则显示 ‘无'
         self.topcelln = 0
@@ -717,6 +735,13 @@ class Report():
         db.displaydata(datatype='overcrowding')
         if len(db.dbdata) != 0:
             html.body('h2', '   ◎  高拥塞小区')
+
+            # 保留高拥塞小区信息
+            if ini.config['autodisabledpmmeasurement'] == '1':
+                ini.autodisabledpmmeasurementdata = [temp_i[2] for temp_i in db.dbdata]
+                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区因拥塞对现网指标影响较大，'
+                                '已尝试将RRC测量上报开关关闭!!!</b></font>')
+                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
             html.table()
             self.topcelln += 1
 
@@ -724,7 +749,7 @@ class Report():
         db.getdata(ini.maxue, timetype='top')
         db.displaydata(datatype='maxue')
         if len(db.dbdata) != 0:
-            html.body('h4', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限，请尽快扩容！')
+            html.body('h2', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限，请尽快扩容！')
             html.table()
             self.topcelln += 1
 
@@ -765,10 +790,65 @@ if __name__ == '__main__':
         if ini.config['timetype'] == 'raw_monitor' and db_report.topcelln == 0:
             ini.main['actemail'] = '0'
 
-        # 发送邮件z
+        # 发送邮件
         if ini.main['actemail'] == '1':
             email = Email()
             email.loging()
             email.emailtext(html.MIMEtext)
             email.sendemail()
             email.smtpObj.close()
+
+        # 关闭高拥塞小区测量
+        if ini.autodisabledpmmeasurementdata != '':
+            print('>>> 开始尝试关闭拥塞小区测量...')
+            # 获取高拥塞小区，并转化成 {enbid：ip} 格式
+            disabledpmmeasurement_list = {}
+            for i in ini.autodisabledpmmeasurementdata:
+                try:
+                    if ini.cellinfo_data[i][1].count('.') == 3:
+                        disabledpmmeasurement_list[ini.cellinfo_data[i][0][:6]] = ini.cellinfo_data[i][1]
+                except:
+                    print(''.join(('>>> 基础数据 cellinfo 中未存在ENBID:', i, ' ,请检查完善！')))
+            # 如果所有小区都没有读取到ip，则退出
+            if len(disabledpmmeasurement_list) == 0:
+                sys.exit()
+            # 生成批处理bat文件
+            bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
+            with open(bat_path, 'w') as f_dm:
+                for j in disabledpmmeasurement_list:
+                    temp_text = ''.join(('call commission.bat -ne ',
+                                         disabledpmmeasurement_list[j],
+                                         ' -pw Nemuadmin:nemuuser -parameterfile disabled.xml |tee ./temp/',
+                                         j, '.log'))
+                    f_dm.write(temp_text)
+                    f_dm.write('\n')
+            # 修改运行文件夹为批处理文件所在目录，并执行批处理程序；
+            os.chdir(''.join((ini.path, '/CommisionTool')))
+            subprocess.call(bat_path)
+            # 读取批处理程序运行结果，并生成csv记录表
+            f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
+            if not os.path.exists(f_csv):
+                f_csv_new = open(f_csv, 'w')
+                f_csv_new.write('时间,enbid,ip,关闭测量情况\n')
+                f_csv_new.close()
+            with open(f_csv, 'a') as f_dml:
+                for kk in disabledpmmeasurement_list:
+                    f_dml.write("'")
+                    f_dml.write(str(ini.htmlname))
+                    f_dml.write(',')
+                    f_dml.write(str(kk))
+                    f_dml.write(',')
+                    f_dml.write(str(disabledpmmeasurement_list[kk]))
+                    f_dml.write(',')
+                    with open(''.join((ini.path,'/CommisionTool/temp/', kk, '.log')), 'r') as f_log:
+                        log_info = f_log.read()
+                        if 'Successfully activated' in log_info:
+                            f_dml.write('Successfully Disabeled PM Measurement')
+                        elif ' Connection from 0.0.0.0 exists' in log_info:
+                            f_dml.write('Connection refused')
+                        elif 'Cannot connect to' in log_info:
+                            f_dml.write('Connection Failed')
+                        else:
+                            f_dml.write('Other Failed')
+                        f_dml.write('\n')
+            print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
