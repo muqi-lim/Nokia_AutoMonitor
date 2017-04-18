@@ -12,6 +12,7 @@ import copy
 import csv
 import traceback
 import math
+import shutil
 
 
 def copy_right():
@@ -92,6 +93,7 @@ class Main:
         self.config_main = {}
         self.config_mrs = {}
         self.config_mro = {}
+        self.config_filter = {}
 
         self.yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')
 
@@ -131,18 +133,34 @@ class Main:
         if self.config_main['process'][0] in ['1', 1]:
             self.config_main['process'][0] = '2'
 
+        """获取 filter 配置文件"""
+        for a in self.cf.options('filter'):
+            self.config_filter[a] = self.cf.get('filter', a).split(',')
+        self.config_filter['filter_type'] = [i.lower() for i in self.config_filter['filter_type']]
+        if self.config_filter['filter_id'] == [''] and self.config_filter['filter_type'] == ['']:
+            self.config_filter['active_filter'] = 0
+
         # 获取处理列表
         self.parse_file_list = {}
         self.get_files(self.config_main['source_path'][0])
+
+        # 检测结果目录是否存在，如果不存在则创建
+        if len(self.parse_file_list) != 0:
+            if not os.path.isdir(self.config_main['target_path'][0]):
+                os.makedirs(self.config_main['target_path'][0])
 
     def get_config(self, mr_type):
 
         """获取配置"""
 
+        self.temp_mrs_data = {}
+        self.temp_mro_data = {}
+        # self.mro_data_data = {}
         if mr_type == 'mrs':
             for l in self.cf.options('MRS'):
                 self.config_mrs[l] = self.cf.get('MRS', l).split(',')
             self.mrs_parse_sheet = []
+            self.mrs_head = {}
             self.config_mrs['gather_type'] = [m.lower() for m in self.config_mrs['gather_type']]
             if self.config_mrs['gather_type'] == ['all']:
                 self.config_mrs['gather_type'] = ['hour', 'id']
@@ -250,6 +268,106 @@ class Main:
 
         return min_cell, min_stance
 
+    def mro_main(self, mro_object):
+
+        """统计mro_main表"""
+
+        temp_id = 1
+        ecid = int(mro_object.attrib['id'])
+        for value in mro_object.iter('v'):
+            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            if temp_id == 1:
+                ecid_earfcn_pci = '_'.join(map(str, (ecid, temp_value[7], temp_value[8])))
+                temp_mro_main = ['mro_main',
+                                 ecid_earfcn_pci,
+                                 [temp_value[0],
+                                  temp_value[1],
+                                  temp_value[2],
+                                  temp_value[4],
+                                  temp_value[5],
+                                  temp_value[6],
+                                  temp_value[20],
+                                  temp_value[21],
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  ]
+                                 ]
+                # 统计MR覆盖率
+                if temp_value[0]-140 >= int(self.config_mro['mr_lap'][0]):
+                    temp_mro_main[2][17] = 1
+
+                temp_id = 0
+            if temp_value[7] == temp_value[11]:
+                if temp_value[9] - 140 >= int(self.config_mro['overlap_ncell_rsrp_1'][0]) and abs(temp_value[0] - temp_value[9]) <= abs(int(self.config_mro['overlap_db_1'][0])):
+                    temp_mro_main[2][9] = 1
+                    temp_mro_main[2][10] = temp_value[2]
+                    temp_mro_main[2][11] = temp_value[0]
+                    temp_mro_main[2][12] = temp_value[9]
+
+                if temp_value[9] - 140 >= int(self.config_mro['overlap_ncell_rsrp_2'][0]) and abs(temp_value[0] - temp_value[9]) <= abs(int(self.config_mro['overlap_db_2'][0])):
+                    temp_mro_main[2][13] = 1
+                    temp_mro_main[2][14] = temp_value[2]
+                    temp_mro_main[2][15] = temp_value[0]
+                    temp_mro_main[2][16] = temp_value[9]
+
+            # 先汇总，后才传送到queue
+            try:
+                self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] += numpy.array(
+                    temp_mro_main[2])
+            except:
+                try:
+                    self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(
+                        temp_mro_main[2])
+                except:
+                    self.temp_mro_data[temp_mro_main[0]] = {}
+                    self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(
+                        temp_mro_main[2])
+
+    def mro_ecid(self, object_mro):
+        for value in object_mro.iter('v'):
+            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            ecid1 = int(object_mro.attrib['id'])
+            ecid_earfcn_pci_n_earfcn_n_pci = '_'.join(map(str, (ecid1,
+                                                                temp_value[7],
+                                                                temp_value[8],
+                                                                temp_value[11],
+                                                                temp_value[12]
+                                                                )
+                                                          )
+                                                      )
+            if temp_value[11] != 0:
+                temp_mro_ecid = ['mro_ecid',
+                                 ecid_earfcn_pci_n_earfcn_n_pci,
+                                 [temp_value[0],
+                                  temp_value[2],
+                                  temp_value[9], 1,
+                                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                                  ]
+                                 ]
+                srsrp_nrsrp = temp_value[9] - temp_value[0]
+                if srsrp_nrsrp < -10:
+                    srsrp_nrsrp = -11
+                if srsrp_nrsrp > 10:
+                    srsrp_nrsrp = 11
+                temp_mro_ecid[2][self.rsrp_dir[srsrp_nrsrp]] = 1
+                # 先汇总，后才传送到queue
+                try:
+                    self.temp_mro_data[temp_mro_ecid[0]][temp_mro_ecid[1]] += numpy.array(temp_mro_ecid[2])
+                except:
+                    try:
+                        self.temp_mro_data[temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(temp_mro_ecid[2])
+                    except:
+                        self.temp_mro_data[temp_mro_ecid[0]] = {}
+                        self.temp_mro_data[temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(temp_mro_ecid[2])
+
     def parse_process(self, mr_type):
 
         """多进程控制"""
@@ -293,17 +411,38 @@ class Main:
         elif mr_type == 'mro':
             self.mro_data_data = process_listen.get()
 
+    def filter(self, file_name, type_filter):
+        if (os.path.split(file_name)[-1][19:25] in self.config_filter['filter_id'] or self.config_filter[
+            'filter_id'] == ['']) and (
+                        os.path.split(file_name)[-1][7:10].lower() in self.config_filter['filter_type'] or
+                        self.config_filter[
+                    'filter_type'] == ['']):
+            if type_filter == 'xml' or type_filter == 'gz':
+                if os.path.isfile(os.path.join(self.config_main['target_path'][0], os.path.split(file_name)[-1])):
+                    pass
+                else:
+                    shutil.copyfile(file_name, os.path.join(self.config_main['target_path'][0], os.path.split(
+                        file_name)[-1]))
+            return 1
+        else:
+            return 0
+
     def child_parse_process(self, mr_type, file_type, file_name, queue='', ishead=0):
 
         """文件格式判断、解压、parse xml"""
 
         # self.temp_value_lists = copy.deepcopy(self.value_lists)
-        print('parser:',os.getpid())
+        print('parser:', os.getpid())
 
         if file_type == 'xml':
             try:
-                tree = ET.parse(file_name)
-                self.parser(tree, mr_type, queue, ishead)
+                if self.config_filter['active_filter'] != ['1']:
+                    tree = ET.parse(file_name)
+                    self.parser(tree, mr_type, queue, ishead)
+                else:
+                    if self.filter(file_name, 'xml') == 1:
+                        tree = ET.parse(file_name)
+                        self.parser(tree, mr_type, queue, ishead)
             except:
                 traceback.print_exc()
 
@@ -312,42 +451,51 @@ class Main:
                 try:
                     tar_f = tarfile.open(file_name)
                     for temp_file in tar_f.getnames():
+                        print(temp_file)
                         temp_file_tar_f = tar_f.extractfile(temp_file)
                         temp_file_suffix = temp_file.split('.')[-1].lower()
                         if temp_file_suffix == 'gz':
-                            tree = ET.parse(gzip.open(temp_file_tar_f))
-                            self.parser(tree, mr_type, queue, ishead)
+                            if self.config_filter['active_filter'] != ['1']:
+                                tree = ET.parse(gzip.open(temp_file_tar_f))
+                                self.parser(tree, mr_type, queue, ishead)
+                            else:
+                                if self.filter(temp_file, 'tar_gz') == 1:
+                                    tree = ET.parse(gzip.open(temp_file_tar_f))
+                                    self.parser(tree, mr_type, queue, ishead)
+                                    tar_f.extract(temp_file, self.config_main['target_path'][0])
+
                         elif temp_file_suffix == 'xml':
-                            tree = ET.parse(temp_file_tar_f)
-                            self.parser(tree, mr_type, queue, ishead)
+                            if self.config_filter['active_filter'] != ['1']:
+                                tree = ET.parse(temp_file_tar_f)
+                                self.parser(tree, mr_type, queue, ishead)
+                            else:
+                                if self.filter(temp_file, 'tar_gz') == 1:
+                                    tree = ET.parse(temp_file_tar_f)
+                                    self.parser(tree, mr_type, queue, ishead)
+                                    tar_f.extract(temp_file, self.config_main['target_path'][0])
+
                     tar_f.close()
                 except:
-                    traceback.print_exc()
-                    tree = ET.parse(gzip.open(file_name))
-                    self.parser(tree, mr_type, queue, ishead)
+                    # traceback.print_exc()
+                    gzip_file = gzip.open(file_name)
+                    if self.config_filter['active_filter'] != ['1']:
+                        tree = ET.parse(gzip_file)
+                        self.parser(tree, mr_type, queue, ishead)
+                    else:
+                        if self.filter(file_name, 'gz') == 1:
+                            tree = ET.parse(gzip_file)
+                            self.parser(tree, mr_type, queue, ishead)
+
+
             except:
                 traceback.print_exc()
-        # # 数据入库
-        # if ishead == 0:
-        #     try:
-        #         queue.acquire()
-        #         cx = sqlite3.connect(os.path.join(self.config_main['target_path'][0], 'temp/db.db'))
-        #         if mr_type == 'mrs':
-        #             for table_temp in self.temp_value_lists['mrs']:
-        #                 if len(self.temp_value_lists['mrs'][table_temp]) != 0:
-        #                     text_n = '?,' * len(self.temp_value_lists['mrs'][table_temp][0])
-        #                     cmd_cx = "insert into {0} values({1})".format(table_temp, text_n[:-1])
-        #                     cx.executemany(cmd_cx, self.temp_value_lists['mrs'][table_temp])
-        #         elif mr_type == 'mro':
-        #             if self.temp_value_lists['mro'] != 0:
-        #                 text_n = '?,' * len(self.temp_value_lists['mro'][0])
-        #                 cmd_cx = "insert into {0} values({1})".format('mro', text_n[:-1])
-        #                 cx.executemany(cmd_cx, self.temp_value_lists['mro'])
-        #         cx.commit()
-        #         cx.close()
-        #     finally:
-        #         lock.release()
-        #         self.temp_value_lists = copy.deepcopy(self.value_lists)
+
+        # 数据送到queue
+        if ishead == 0:
+            type_list = {'mrs': self.temp_mrs_data,
+                         'mro': self.temp_mro_data}
+            self.queue_send(queue, type_list[mr_type])
+            type_list[mr_type] = {}
 
     def parser(self, tree, mr_type, queue, ishead):
         if ishead == 1:
@@ -356,62 +504,34 @@ class Main:
                 for mrname in tree.iter('measurement'):
                     if (self.config_mrs['mrs_parse_sheet'] == [''] or mrname.attrib['mrName'] in self.config_mrs['mrs_parse_sheet']) and mrname.attrib['mrName'] not in self.config_mrs['mrs_exception_sheet']:
                         self.mrs_parse_sheet.append(mrname.attrib['mrName'])
-            elif mr_type == 'mro':
-                self.mro_parse_sheet = ['mro']
 
-            # # 获取表头，并生成数据库
-            # if not os.path.exists(os.path.join(self.config_main['target_path'][0], 'temp')):
-            #     os.makedirs(os.path.join(self.config_main['target_path'][0], 'temp'))
-            # cx = sqlite3.connect(os.path.join(self.config_main['target_path'][0], 'temp/db.db'))
-            # cu = cx.cursor()
-
+            # 获取mrs表头
             if mr_type == 'mrs':
-                pass
-                # for mrname in tree.iter('measurement'):
-                #     if mrname.attrib['mrName'] in self.mrs_parse_sheet:
-                #         for smr in mrname.iter('smr'):
-                #             head_temp = smr.text.replace('.', '_').rstrip().split(' ')
-                #             text = 'reportTime text,startTime text,endTime text,enbid integer,ecid text,'
-                #             for i in head_temp:
-                #                 text += i
-                #                 text += ' '
-                #                 text += 'integer'
-                #                 text += ','
-                #             text = text[:-1]
-                #             try:
-                #                 self.value_lists['mrs'][mrname.attrib['mrName'].replace('.', '_')] = []
-                #                 cmd = "create table {0} ({1})".format(mrname.attrib['mrName'].replace('.', '_'), text)
-                #                 cu.execute(cmd)
-                #             except:
-                #                 pass
-            elif mr_type == 'mro':
-                pass
-            #     for smr in tree.iter('smr'):
-            #         head_temp = smr.text.replace('.', '_').rstrip().split(' ')
-            #         if head_temp[0] == 'MR_LteScRSRP':
-            #             head_temp = head_temp[:13] + head_temp[20:]
-            #             # text = 'reportTime text,startTime text,endTime text,TimeStamp text,ecid integer,'
-            #             text = 'TimeStamp text,ecid integer,'
-            #             for i in head_temp:
-            #                 text += i
-            #                 text += ' '
-            #                 text += 'integer'
-            #                 text += ','
-            #             # text += 'issconlyone integer,overlap3 integer,overlap6 integer'
-            #             text += 'issconlyone integer'
-            #             # text = text[:-1]
-            #             try:
-            #                 cmd = "create table {0} ({1})".format('mro', text)
-            #                 cu.execute(cmd)
-            #             except:
-            #                 pass
-            #             break
-            #         else:
-            #             pass
-            # cx.close()
+                for mrname in tree.iter('measurement'):
+                    temp_table_name = mrname.attrib['mrName']
+                    if temp_table_name in self.mrs_parse_sheet:
+                        for smr in mrname.iter('smr'):
+                            head_temp = smr.text.replace('.', '_').rstrip().split(' ')
+                            self.mrs_head[temp_table_name] = head_temp
+
         elif ishead == 0:
             if mr_type == 'mrs':
-                pass
+                for temp_mr_name in tree.iter('measurement'):
+                    temp_table_name_1 = temp_mr_name.attrib['mrName']
+                    if temp_table_name_1 in self.mrs_parse_sheet:
+                        for temp_id in temp_mr_name.iter('object'):
+                            temp_mrs_ecid = temp_id.attrib['id']
+                            for temp_value in temp_id.iter('v'):
+                                temp_values = numpy.array(list(map(int, temp_value.text.rstrip().split(' '))))
+                                try:
+                                    self.temp_mrs_data[temp_table_name_1][temp_mrs_ecid] += temp_values
+                                except:
+                                    try:
+                                        self.temp_mrs_data[temp_table_name_1][temp_mrs_ecid] = temp_values
+                                    except:
+                                        self.temp_mrs_data[temp_table_name_1] = {}
+                                        self.temp_mrs_data[temp_table_name_1][temp_mrs_ecid] = temp_values
+
                 # for fileHeader in tree.iter('fileHeader'):
                 #     start_time = fileHeader.attrib['startTime']
                 #     end_time = fileHeader.attrib['endTime']
@@ -435,129 +555,31 @@ class Main:
                 #     start_time = fileHeader.attrib['startTime']
                 #     end_time = fileHeader.attrib['endTime']
                 #     report_time = fileHeader.attrib['reportTime']
-                temp_mro_data = {}
+
                 # 计算ecid时对应表
-                rsrp_dir = {
+                self.rsrp_dir = {
                     -11: 4, -10: 5, -9: 6, -8: 7, -7: 8, -6: 9, -5: 10, -4: 11, -3: 12,
                     -2: 13, -1: 14, 0: 15, 1: 16, 2: 17, 3: 18, 4: 19, 5: 20, 6: 21, 7: 22,
                     8: 23, 9: 24, 10: 25, 11: 26
                 }
+                table_list = {'mro_main': self.mro_main, 'mro_ecid': self.mro_ecid}
                 for measurement in tree.iter('measurement'):
                     for smr in measurement.iter('smr'):
                         head_temp = smr.text.replace('.', '_').rstrip().split(' ')
                         if head_temp[0] == 'MR_LteScRSRP':
-                            for object in measurement.iter('object'):
-                                ecid = int(object.attrib['id'])
-                                # 计算MRO_MAIN表
-                                temp_id = 1
-                                for value in object.iter('v'):
-                                    temp_value = list(map(int,value.text.rstrip().replace('NIL','0').split(' ')))
-                                    if temp_id == 1:
-                                        ecid_earfcn_pci = '_'.join(map(str, (ecid, temp_value[7], temp_value[8])))
-                                        temp_mro_main = ['mro_main',
-                                                         ecid_earfcn_pci,
-                                                         [temp_value[0],
-                                                          temp_value[1],
-                                                          temp_value[2],
-                                                          temp_value[4],
-                                                          temp_value[5],
-                                                          temp_value[6],
-                                                          temp_value[20],
-                                                          temp_value[21],
-                                                          1,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                          ]
-                                                         ]
-                                        temp_id = 0
-                                    if temp_value[7] == temp_value[11]:
-                                        if temp_value[9]-140 >= int(self.config_mro['overlap_ncell_rsrp_1'][0]) and \
-                                                        abs(temp_value[0]-temp_value[9]) <= abs(int(self.config_mro[
-                                                                                                        'overlap_db_1'][
-                                                                                                        0])):
-                                            temp_mro_main[2][9] = 1
-                                            temp_mro_main[2][10] = temp_value[2]
-                                            temp_mro_main[2][11] = temp_value[0]
-                                            temp_mro_main[2][12] = temp_value[9]
+                            for object_mro in measurement.iter('object'):
+                                # 分别生成需要的mro表
+                                for table_temp in self.config_mro['mro_parse_sheet']:
+                                    table_list[table_temp](object_mro)
+                # 最后才送到queue
+                # for temp_table in self.temp_mro_data:
+                #     for temp_ecid in self.temp_mro_data[temp_table]:
+                #         queue.put(['data', [temp_table, temp_ecid, self.temp_mro_data[temp_table][temp_ecid]]])
 
-                                        if temp_value[9]-140 >= int(self.config_mro['overlap_ncell_rsrp_2'][0]) and \
-                                                        abs(temp_value[0]-temp_value[9]) <= abs(int(self.config_mro[
-                                                                                                        'overlap_db_2'][
-                                                                                                        0])):
-                                            temp_mro_main[2][13] = 1
-                                            temp_mro_main[2][14] = temp_value[2]
-                                            temp_mro_main[2][15] = temp_value[0]
-                                            temp_mro_main[2][16] = temp_value[9]
-                                    # 先汇总，后才传送到queue
-                                    try:
-                                        temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] += numpy.array(
-                                            temp_mro_main[2])
-                                    except:
-                                        try:
-                                            temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(
-                                                temp_mro_main[2])
-                                        except:
-                                            temp_mro_data[temp_mro_main[0]] = {}
-                                            temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(
-                                                temp_mro_main[2])
-                                    # if queue.qsize() > 99999:
-                                    #     time.sleep(5)
-                                    # queue.put(['data', temp_mro_main])
-
-                                # MRO_ECID表
-                                for value in object.iter('v'):
-                                    temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
-                                    ecid1 = int(object.attrib['id'])
-                                    ecid_earfcn_pci_n_earfcn_n_pci = '_'.join(map(str, (ecid1,
-                                                                                        temp_value[7],
-                                                                                        temp_value[8],
-                                                                                        temp_value[11],
-                                                                                        temp_value[12]
-                                                                                        )
-                                                                                  )
-                                                                              )
-                                    if temp_value[11] != 0:
-                                        temp_mro_ecid = ['mro_ecid',
-                                                         ecid_earfcn_pci_n_earfcn_n_pci,
-                                                         [temp_value[0],
-                                                          temp_value[2],
-                                                          temp_value[9], 1,
-                                                          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                                          ]
-                                                         ]
-                                        srsrp_nrsrp = temp_value[9] - temp_value[0]
-                                        if srsrp_nrsrp < -10:
-                                            srsrp_nrsrp = -11
-                                        if srsrp_nrsrp > 10:
-                                            srsrp_nrsrp = 11
-                                        temp_mro_ecid[2][rsrp_dir[srsrp_nrsrp]] = 1
-                                        # 先汇总，后才传送到queue
-                                        try:
-                                            temp_mro_data[temp_mro_ecid[0]][temp_mro_ecid[1]] += numpy.array(
-                                                temp_mro_ecid[2])
-                                        except:
-                                            try:
-                                                temp_mro_data[temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
-                                                    temp_mro_ecid[2])
-                                            except:
-                                                temp_mro_data[temp_mro_ecid[0]] = {}
-                                                temp_mro_data[temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
-                                                    temp_mro_ecid[2])
-                                        # queue.put(['data', temp_mro_ecid])
-                                # MRO_earfcn表
-                                for value in object.iter('v'):
-                                    temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
-                                    if temp_value[11] != 0:
-                                        pass
-                for temp_table in temp_mro_data:
-                    for temp_ecid in temp_mro_data[temp_table]:
-                        queue.put(['data', [temp_table, temp_ecid, temp_mro_data[temp_table][temp_ecid]]])
+    def queue_send(self, queue, data):
+        for temp_table in data:
+            for temp_ecid in data[temp_table]:
+                queue.put(['data', [temp_table, temp_ecid, data[temp_table][temp_ecid]]])
 
     def listen(self, queue, mr_type):
         print('listen:', os.getpid())
@@ -583,20 +605,55 @@ class Main:
                 return all_list
 
     def writer(self, mr_type):
+        if self.config_main['timing'][0] == '1':
+            temp_day_head = ''.join(('_', self.yesterday))
+            temp_day = self.yesterday
+        else:
+            temp_day_head = ''
+            temp_day = '-'
         if mr_type == 'mrs':
-            pass
+            for table_mrs in self.mrs_data_data['mrs']:
+                with open(os.path.join(self.config_main['target_path'][0],
+                                       '{0}{1}.csv'.format(table_mrs, temp_day_head)), 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    if table_mrs == 'MR.RSRP':
+                        writer.writerow(['DAY', 'ECID', 'ENB_ID', 'ENB_CELLID', 'MR覆盖率（RSRP>=-110)',
+                                         'RSRP>=-110计数器', 'ALL计数器'] + self.mrs_head[table_mrs])
+                        # print(self.mrs_data_data)
+                        for temp_ecid in self.mrs_data_data['mrs'][table_mrs]:
+                            enb_cellid = '_'.join((str(int(temp_ecid)//256), str(int(temp_ecid)%256)))
+                            numerator = numpy.sum(self.mrs_data_data['mrs'][table_mrs][temp_ecid][7:])
+                            denominator = numpy.sum(self.mrs_data_data['mrs'][table_mrs][temp_ecid])
+                            if denominator == 0:
+                                range_mrs = '-'
+                            else:
+                                range_mrs = round(numerator/denominator*100,2)
+                            writer.writerow([temp_day, temp_ecid, int(temp_ecid)//256, enb_cellid, range_mrs,
+                                             numerator,
+                                             denominator]+list(self.mrs_data_data['mrs'][table_mrs][temp_ecid]))
+                    else:
+                        writer.writerow(['DAY', 'ECID', ] + self.mrs_head[table_mrs])
+                        # print(self.mrs_data_data)
+                        for temp_ecid in self.mrs_data_data['mrs'][table_mrs]:
+                            writer.writerow([temp_day, temp_ecid,]+list(self.mrs_data_data['mrs'][table_mrs][
+                                                                           temp_ecid]))
         elif mr_type == 'mro':
             # 读取基础数据
             self.mro_earfcn_pci_cellid_relate()
-
             for table in self.mro_data_data['mro']:
-                with open(os.path.join(self.config_main['target_path'][0], '{0}.csv'.format(table)), 'w', newline='') \
-                        as csvfile:
+                with open(os.path.join(self.config_main['target_path'][0], '{0}{1}.csv'.format(table, temp_day_head)),
+                          'w', newline='') as csvfile:
                     writer = csv.writer(csvfile)
                     if table == 'mro_main':
-                        writer.writerow(('ECID','ENBID','ENB_CLEEID','EARFCN','PCI','MR.LteScRSRP','MR.LteScRSRQ',
+                        writer.writerow(('DAY', 'ECID','ENBID','ENB_CLEEID','EARFCN','PCI','MR.LteScRSRP',
+                                         'MR.LteScRSRQ',
                                          'MR.LteScTadv','MR.LteScPHR','MR.LteScAOA','MR.LteScSinrUL',
-                                         'MR.LteScPUSCHPRBNum','MR.LteScPDSCHPRBNum','s_samplint','overlap_-3_-113_samplint','overlap_-3_-113_ScTadv','overlap_-3_-113_s_cell_rsrp','overlap_-3_-113_n_cell_rsrp','overlap_-6_-113_samplint','overlap_-6_-113_ScTadv','overlap_-6_-113_s_cell_rsrp','overlap_-6_-113_n_cell_rsrp'))
+                                         'MR.LteScPUSCHPRBNum','MR.LteScPDSCHPRBNum','s_samplint',
+                                         'overlap_-3_-113_samplint','overlap_-3_-113_ScTadv',
+                                         'overlap_-3_-113_s_cell_rsrp','overlap_-3_-113_n_cell_rsrp',
+                                         'overlap_-6_-113_samplint','overlap_-6_-113_ScTadv',
+                                         'overlap_-6_-113_s_cell_rsrp','overlap_-6_-113_n_cell_rsrp','RSRP>=-110采样点',
+                                         'MR覆盖率(RSRP>=-110)'))
                         for table_id in self.mro_data_data['mro'][table]:
                             temp_value = self.mro_data_data['mro'][table][table_id]
                             if temp_value[8] != 0:
@@ -608,20 +665,23 @@ class Main:
                             else:
                                 temp_value_2 = temp_value[10:13]
                             if temp_value[13] != 0:
-                                temp_value_3 = temp_value[14:]/temp_value[13]
+                                temp_value_3 = temp_value[14:17]/temp_value[13]
                             else:
-                                temp_value_3 = temp_value[14:]
+                                temp_value_3 = temp_value[14:17]
                             temp_value = list(temp_value_1) + list(temp_value[8:10]) + list(temp_value_2) + list([
-                                temp_value[13], ]) + list(temp_value_3)
+                                temp_value[13], ]) + list(temp_value_3) + list([temp_value[17], ])
                             temp_value = list(map(int, temp_value))
                             temp_id = table_id.split('_')
                             temp_senbid = str(int(temp_id[0]) // 256)
-                            writer.writerow([temp_id[0],
+                            print(temp_value)
+                            writer.writerow([temp_day, temp_id[0],
                                              temp_senbid,
                                              '_'.join((temp_senbid, str(int(temp_id[0]) % 256))),
-                                             temp_id[1], temp_id[2]] + temp_value)
+                                             temp_id[1],
+                                             temp_id[2]] + temp_value + [round(temp_value[17] / temp_value[8]*100,2), ])
                     elif table == 'mro_ecid':
-                        writer.writerow(('S_ECID','ENBID','ENB_CELLID','S_EARFCN','S_PCI','N_ENB_CELLID','N_EARFCN',
+                        writer.writerow(('DAY','S_ECID','ENBID','ENB_CELLID','S_EARFCN','S_PCI','N_ENB_CELLID',
+                                         'N_EARFCN',
                                          'N_PCI','Distance(m)',
                                          'Scrsrp',
                                          'ScTadv','Ncrsrp',' N_Samplint','<-10db','-10db','-9db','-8db','-7db',
@@ -637,7 +697,7 @@ class Main:
                             temp_id = table_id.split('_')
                             temp_senbid = str(int(temp_id[0])//256)
                             temp_ncellid, temp_min_stance = self.min_distance_cell(temp_senbid, temp_id[3], temp_id[4])
-                            writer.writerow([temp_id[0],temp_senbid,
+                            writer.writerow([temp_day,temp_id[0],temp_senbid,
                                              '_'.join((str(int(temp_id[0])//256), str(int(temp_id[0]) % 256))),
                                              temp_id[1], temp_id[2], temp_ncellid, temp_id[3], temp_id[4],
                                              temp_min_stance] + temp_value)
@@ -646,11 +706,11 @@ class Main:
         print('>>> 解码 ', mr_type.upper(), ' 数据...')
         self.get_config(mr_type)
         self.parse_process(mr_type)
-        print('>>> MRS数据处理及保存，请等待...')
+        print('>>> {0} 数据处理及保存，请等待...'.format(mr_type))
         self.writer(mr_type)
-        print('>>> MRS 数据处理完毕！')
+        print('>>> {0} 数据处理完毕！'.format(mr_type))
         print('-' * 26)
-        print('完成！MRS解码结果保存在此文件夹: ', self.config_main['target_path'][0])
+        print('完成！{0}解码结果保存在此文件夹: '.format(mr_type), self.config_main['target_path'][0])
         print('-' * 26)
 
 
