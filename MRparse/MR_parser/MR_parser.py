@@ -305,6 +305,7 @@ class Main:
                     temp_mro_main[2][17] = 1
 
                 temp_id = 0
+
             if temp_value[7] == temp_value[11]:
                 if temp_value[9] - 140 >= int(self.config_mro['overlap_ncell_rsrp_1'][0]) and abs(temp_value[0] - temp_value[9]) <= abs(int(self.config_mro['overlap_db_1'][0])):
                     temp_mro_main[2][9] = 1
@@ -318,18 +319,15 @@ class Main:
                     temp_mro_main[2][15] = temp_value[0]
                     temp_mro_main[2][16] = temp_value[9]
 
-            # 先汇总，后才传送到queue
+        # 先汇总，后才传送到queue
+        try:
+            self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] += numpy.array(temp_mro_main[2])
+        except:
             try:
-                self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] += numpy.array(
-                    temp_mro_main[2])
+                self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(temp_mro_main[2])
             except:
-                try:
-                    self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(
-                        temp_mro_main[2])
-                except:
-                    self.temp_mro_data[temp_mro_main[0]] = {}
-                    self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(
-                        temp_mro_main[2])
+                self.temp_mro_data[temp_mro_main[0]] = {}
+                self.temp_mro_data[temp_mro_main[0]][temp_mro_main[1]] = numpy.array(temp_mro_main[2])
 
     def mro_ecid(self, object_mro):
         for value in object_mro.iter('v'):
@@ -432,7 +430,7 @@ class Main:
         """文件格式判断、解压、parse xml"""
 
         # self.temp_value_lists = copy.deepcopy(self.value_lists)
-        print('parser:', os.getpid())
+        # print('parser:', os.getpid())
 
         if file_type == 'xml':
             try:
@@ -451,7 +449,7 @@ class Main:
                 try:
                     tar_f = tarfile.open(file_name)
                     for temp_file in tar_f.getnames():
-                        print(temp_file)
+                        # print(temp_file)
                         temp_file_tar_f = tar_f.extractfile(temp_file)
                         temp_file_suffix = temp_file.split('.')[-1].lower()
                         if temp_file_suffix == 'gz':
@@ -582,7 +580,7 @@ class Main:
                 queue.put(['data', [temp_table, temp_ecid, data[temp_table][temp_ecid]]])
 
     def listen(self, queue, mr_type):
-        print('listen:', os.getpid())
+        # print('listen:', os.getpid())
         all_list = {'mrs': {},
                     'mro': {}
                     }
@@ -673,7 +671,7 @@ class Main:
                             temp_value = list(map(int, temp_value))
                             temp_id = table_id.split('_')
                             temp_senbid = str(int(temp_id[0]) // 256)
-                            print(temp_value)
+                            # print(temp_value)
                             writer.writerow([temp_day, temp_id[0],
                                              temp_senbid,
                                              '_'.join((temp_senbid, str(int(temp_id[0]) % 256))),
@@ -715,7 +713,7 @@ class Main:
 
 
 if __name__ == '__main__':
-    print('main:', os.getpid())
+    # print('main:', os.getpid())
     copy_right()
     multiprocessing.freeze_support()
     star_time = time.time()
