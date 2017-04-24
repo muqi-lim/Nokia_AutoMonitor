@@ -39,7 +39,8 @@ def copy_right():
 
     2017-3-22 重构，改进算法，支持多进程处理，效率大幅提高；
     2017-4-18 添加过滤器，支持指定需解码基站数据，并提取对应原始数据到指定文件夹；
-    2017-4-19 添加 mro_rsrp 表，记录的为MR覆盖率各个RSRP等级分别情况，同mrs解码的MR.RSRP表；
+    2017-4-19 添加 mro_rsrp 表，记录的为MR覆盖率各个RSRP等级分布情况，同mrs解码的MR.RSRP表；
+    2017-4-20 过滤器增加时段字段，可以指定需解码的时段；
 
     ''')
     print('-' * 36)
@@ -92,6 +93,7 @@ if sys.platform.startswith('win'):
 class Main:
     def __init__(self):
         """初始化"""
+        copy_right()
         self.main_path = os.path.split(os.path.abspath(sys.argv[0]))[0]
         self.cf = configparser.ConfigParser()
         self.cf.read(''.join((self.main_path, '\\', 'config.ini')), encoding='utf-8-SIG')
@@ -108,6 +110,9 @@ class Main:
 
         # 生成结果一个空字典
         self.value_lists = {'mrs': {}, 'mro': []}
+
+        # 统计文件数
+        self.all_num = {'mrs': 0, 'mro': 0, 'mre': 0}
 
     def get_main_config(self):
 
@@ -235,6 +240,18 @@ class Main:
     def makedir(self):
         if not os.path.exists(self.config_main['target_path'][0]):
             os.makedirs(self.config_main['target_path'][0])
+
+    # 进度条
+    @staticmethod
+    def progress(num_total, num_run, file_name=''):
+        bar_len = 10
+        hashes = '|' * int(num_run / num_total * bar_len)
+        spaces = '_' * (bar_len - len(hashes))
+        sys.stdout.write("\r%s %s %s %d%%  %s" % (str(num_run), hashes + spaces, str(num_total),
+                                                             int(num_run /
+                                                                                                     num_total * 100),
+                                                  file_name))
+        sys.stdout.flush()
 
     def mro_earfcn_pci_cellid_relate(self):
 
@@ -454,10 +471,17 @@ class Main:
             self.mro_data_data = process_listen.get()
 
     def filter(self, file_name, type_filter):
-        if (os.path.split(file_name)[-1][19:25] in self.config_filter['filter_id'] or self.config_filter[
-            'filter_id'] == ['']) and (
-                        os.path.split(file_name)[-1][7:10].lower() in self.config_filter['filter_type'] or
-                        self.config_filter['filter_type'] == ['']):
+        filter_id = self.config_filter['filter_id']
+        filter_type = self.config_filter['filter_type']
+        filter_hour = self.config_filter['filter_hour']
+        temp_filter_id = os.path.split(file_name)[-1][19:25]
+        temp_filter_type = os.path.split(file_name)[-1][7:10].lower()
+        temp_filter_hour = os.path.split(file_name)[-1][34:36]
+        print(temp_filter_hour)
+
+        if (temp_filter_id in filter_id or filter_id == ['']) and (
+                        temp_filter_type in filter_type or filter_type == ['']) and (
+                        temp_filter_hour in filter_hour or filter_hour == ['']):
             if type_filter == 'xml' or type_filter == 'gz':
                 if os.path.isfile(os.path.join(self.config_main['target_path'][0], os.path.split(file_name)[-1])):
                     pass
@@ -534,6 +558,7 @@ class Main:
             type_list = {'mrs': self.temp_mrs_data,
                          'mro': self.temp_mro_data}
             self.queue_send(queue, type_list[mr_type])
+            queue.put('prog')
             type_list[mr_type] = {}
 
     def parser(self, tree, mr_type, queue, ishead):
@@ -597,6 +622,8 @@ class Main:
         all_list = {'mrs': {},
                     'mro': {}
                     }
+        num_ii = 0
+        self.progress(self.all_num[mr_type], num_ii)
         while 1:
             value = queue.get()
             if value[0] == 'data':
@@ -611,7 +638,9 @@ class Main:
                     except:
                         all_list[mr_type][table_name] = {}
                         all_list[mr_type][table_name][table_id] = table_value
-
+            elif value == 'prog':
+                num_ii += 1
+                self.progress(self.all_num[mr_type], num_ii)
             elif value == 'all_finish':
                 return all_list
 
@@ -745,7 +774,7 @@ class Main:
         print('>>> 解码 ', mr_type.upper(), ' 数据...')
         self.get_config(mr_type)
         self.parse_process(mr_type)
-        print('>>> {0} 数据处理及保存，请等待...'.format(mr_type))
+        print('\n>>> {0} 数据处理及保存，请等待...'.format(mr_type))
         self.writer(mr_type)
         print('>>> {0} 数据处理完毕！'.format(mr_type))
         print('-' * 26)
@@ -755,19 +784,26 @@ class Main:
 
 if __name__ == '__main__':
     # print('main:', os.getpid())
-    copy_right()
     multiprocessing.freeze_support()
     star_time = time.time()
-    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
     # 初始化配置
     config_manager = Main()
+    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
     parse_type = config_manager.config_main['parse_type']
     # 统计获取到的文件数：
+    exit_num = 0
     for temp_i in config_manager.parse_file_list:
         num = 0
         for temp_k in config_manager.parse_file_list[temp_i]:
             num += len(config_manager.parse_file_list[temp_i][temp_k])
-        print('>>> 获取到 ', temp_i, ' 文件:', num)
+        if num != 0:
+            print('>>> 获取到 ', temp_i, ' 文件:', num)
+            config_manager.all_num[temp_i] = num
+            exit_num = 1
+    if exit_num == 0:
+        print('>>> {0} 没有获取到需处理数据，请检查！'.format(config_manager.config_main['source_path'][0]))
+        sys.exit()
+
     for b in parse_type:
         if b in config_manager.parse_file_list:
             config_manager.run_manager(b.lower())
