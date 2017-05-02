@@ -629,6 +629,7 @@ class Main:
             elif mr_type == 'mro':
                 table_list = {'mro_main': self.mro_main,
                               'mro_ecid': self.mro_ecid,
+                              'mro_ecid_hour': self.mro_ecid,
                               'mro_rsrp': self.mro_rsrp}
                 report_time = self.get_report_time(tree)
                 for measurement in tree.iter('measurement'):
@@ -829,7 +830,7 @@ class Main:
                                     round(temp_value[17] / temp_value[8] * 100,
                                           2), ]
                                                 )
-                    elif table == 'mro_ecid':
+                    elif table == 'mro_ecid' or table == 'mro_ecid_hour':
                         writer.writerow(('DAY', 'TIME', 'S_ECID', 'ENBID', 'ENB_CELLID', 'S_EARFCN', 'S_PCI',
                                          'N_ENB_CELLID', 'N_EARFCN', 'N_PCI', 'Distance(m)', 'Scrsrp', 'ScTadv',
                                          'Ncrsrp', ' N_Samplint', '<-10db', '-10db', '-9db', '-8db', '-7db',
