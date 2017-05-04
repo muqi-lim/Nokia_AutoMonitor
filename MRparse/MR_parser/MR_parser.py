@@ -45,6 +45,7 @@ def copy_right():
     2017-4-24 MRO覆盖率基准值由140调整为141（调整后与MRS解码的覆盖率一致）；
     2017-4-24 实现按小时级汇总；
     2017-5-2 增加解码表类型 mro_ecid_hour，此表为mro_ecid的小时级表；
+    2017-5-4 优化启动过滤器后的运行效率；
 
     ''')
     print('-' * 36)
@@ -246,7 +247,13 @@ class Main:
                     if file_type not in self.parse_file_list[temp_file_plus[1]]:
                         self.parse_file_list[temp_file_plus[1]][file_type] = []
                 source_path = os.path.join(root, temp_file)
-                self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
+                # 2017年5月4日新增过滤器过滤优化字段
+                if self.config_filter['active_filter'] == ['1']:
+                    if temp_file[-6:] == 'tar.gz' and (temp_file[-13:-11] in self.config_filter['filter_hour'] or
+                                                               self.config_filter['filter_hour'] == ['']):
+                        self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
+                else:
+                    self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
         if len(self.parse_file_list) == 0:
             print('未获取到源文件，请检查source_path是否设置正确或源文件是否存在！')
             sys.exit()
