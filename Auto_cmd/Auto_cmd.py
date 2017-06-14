@@ -139,19 +139,19 @@ class Main:
             if self.config_ping['active_ping'] == ['1']:
                 self.result['ping'][ip] = ['ERROR', ]
 
-    def writer(self, list):
+    def writer(self, lists):
         if self.config_ping['active_ping'] == ['1']:
             f_write = open(os.path.join(self.main_path, 'ping_result.csv'), 'w', encoding='utf-8-sig')
             f_write.write(','.join(('enbip', 'enbip_status', 'target_ip', 'target_ip_status', 'packets transmitted',
                                     'received', 'packet loss', 'min', 'avg', 'max', 'mdev', '\n')))
-            for temp_enbip in list['ping']:
-                if list['ping'][temp_enbip][0] == 'ok':
-                    for temp_aip in list['ping'][temp_enbip][1]:
+            for temp_enbip in lists['ping']:
+                if lists['ping'][temp_enbip][0] == 'ok':
+                    for temp_aip in lists['ping'][temp_enbip][1]:
                         f_write.write(temp_enbip)
                         f_write.write(',ok,')
                         f_write.write(temp_aip)
                         f_write.write(',')
-                        f_write.write(','.join(list['ping'][temp_enbip][1][temp_aip]))
+                        f_write.write(','.join(lists['ping'][temp_enbip][1][temp_aip]))
                         f_write.write('\n')
                 else:
                     f_write.write(temp_enbip)
