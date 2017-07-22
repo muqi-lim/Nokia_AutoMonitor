@@ -38,15 +38,21 @@ def copy_right():
     update log:
 
     2017-3-22 重构，改进算法，支持多进程处理，效率大幅提高；
-    2017-4-18 添加过滤器，支持指定需解码基站数据，并提取对应原始数据到指定文件夹；
-    2017-4-19 添加 mro_rsrp 表，记录的为MR覆盖率各个RSRP等级分布情况，同mrs解码的MR.RSRP表；
+    2017-4-18 添加过滤器，支持指定需解码基站数据，并提取对应原始数据到指定文件夹
+    2017-4-19 添加 mro_rsrp 表，记录的为MR覆盖率各个RSRP等级分布情况，同mrs解码
+              的MR.RSRP表；
     2017-4-20 过滤器增加时段字段，可以指定需解码的时段；
     2017-4-23 添加进度条；
     2017-4-24 MRO覆盖率基准值由140调整为141（调整后与MRS解码的覆盖率一致）；
     2017-4-24 实现按小时级汇总；
-    2017-5-2 增加解码表类型 mro_ecid_hour，此表为mro_ecid的小时级表；
+    2017-5-2 增加解码表类型 mro_ecid_hour，此表为mro_ecid的小时级表(此更新取消)；
     2017-5-4 优化启动过滤器后的运行效率；
-    2017-6-10 增加解码表类型 mro_ecid_yuan ，此表与之前袁总的解码工具解码出来的 MRO_ECIECI 格式一致；
+    2017-6-10 增加解码表类型 mro_ecid_yuan ，此表与之前袁总的解码工具解码出来的
+              MRO_ECIECI 格式一致；
+    2017-6-19 因 mro_ecid 表格较大，取消此表的小时级解码；
+              当解码 mro_ecid 时，会同时生成 mro_ecid 与 mro_ecid_yuan 两张表；
+              匹配不到的邻区不 在mro_ecid_yuan 这张表上呈现；
+              优化 mro_main 中RSRP值及距离的呈现方式；
 
     ''')
     print('-' * 36)
@@ -449,51 +455,6 @@ class Main:
                             self.temp_mro_data[report_time][temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
                                 temp_mro_ecid[2])
 
-    def mro_ecid_yuan(self, object_mro, report_time):
-        for value in object_mro.iter('v'):
-            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
-            ecid1 = int(object_mro.attrib['id'])
-            ecid_earfcn_pci_n_earfcn_n_pci = '_'.join(map(str, (ecid1,
-                                                                temp_value[7],
-                                                                temp_value[8],
-                                                                temp_value[11],
-                                                                temp_value[12]
-                                                                )
-                                                          )
-                                                      )
-            if temp_value[11] != 0:
-                temp_mro_ecid = ['mro_ecid_yuan',
-                                 ecid_earfcn_pci_n_earfcn_n_pci,
-                                 [temp_value[0],
-                                  temp_value[2],
-                                  temp_value[9], 1,
-                                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-                                  ]
-                                 ]
-                srsrp_nrsrp = temp_value[9] - temp_value[0]
-                if srsrp_nrsrp < -10:
-                    srsrp_nrsrp = -11
-                if srsrp_nrsrp > 10:
-                    srsrp_nrsrp = 11
-                temp_mro_ecid[2][self.rsrp_dir[srsrp_nrsrp]] = 1
-                # 先汇总，后才传送到queue
-                try:
-                    self.temp_mro_data[report_time][temp_mro_ecid[0]][temp_mro_ecid[1]] += numpy.array(temp_mro_ecid[2])
-                except:
-                    try:
-                        self.temp_mro_data[report_time][temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
-                            temp_mro_ecid[2])
-                    except:
-                        try:
-                            self.temp_mro_data[report_time][temp_mro_ecid[0]] = {}
-                            self.temp_mro_data[report_time][temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
-                                temp_mro_ecid[2])
-                        except:
-                            self.temp_mro_data[report_time] = {}
-                            self.temp_mro_data[report_time][temp_mro_ecid[0]] = {}
-                            self.temp_mro_data[report_time][temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
-                                temp_mro_ecid[2])
-
     def mro_rsrp(self, mro_object, report_time):
         ecid = int(mro_object.attrib['id'])
         for value in mro_object.iter('v'):
@@ -685,9 +646,6 @@ class Main:
             elif mr_type == 'mro':
                 table_list = {'mro_main': self.mro_main,
                               'mro_ecid': self.mro_ecid,
-                              'mro_ecid_hour': self.mro_ecid,
-                              'mro_ecid_yuan': self.mro_ecid_yuan,
-                              'mro_ecid_yuan_hour': self.mro_ecid_yuan,
                               'mro_rsrp': self.mro_rsrp,
                               }
                 report_time = self.get_report_time(tree)
@@ -698,7 +656,7 @@ class Main:
                             for object_mro in measurement.iter('object'):
                                 # 分别生成需要的mro表
                                 for table_temp in self.config_mro['mro_parse_sheet']:
-                                    if table_temp != 'mro_ecid' or table_temp != 'mro_ecid_yuan':
+                                    if table_temp != 'mro_ecid':
                                         table_list[table_temp](object_mro, report_time)
                                     else:
                                         table_list[table_temp](object_mro, '-')
@@ -745,16 +703,20 @@ class Main:
         elif mr_type == 'mro':
             temp_gather_data = self.mro_data_data
         for temp_table in temp_gather_data[mr_type]:
-            if temp_table not in gather_data[mr_type]:
-                gather_data[mr_type][temp_table] = {'-': {}}
-            for temp_report_time in temp_gather_data[mr_type][temp_table]:
-                for temp_ecid in temp_gather_data[mr_type][temp_table][temp_report_time]:
-                    try:
-                        gather_data[mr_type][temp_table]['-'][temp_ecid] += temp_gather_data[
-                            mr_type][temp_table][temp_report_time][temp_ecid]
-                    except:
-                        gather_data[mr_type][temp_table]['-'][temp_ecid] = temp_gather_data[
-                            mr_type][temp_table][temp_report_time][temp_ecid]
+            # mro_ecid 表不生成小时级，汇总阶段直接删除此表数据
+            if temp_table == 'mro_ecid':
+                temp_gather_data[mr_type][temp_table] = []
+            else:
+                if temp_table not in gather_data[mr_type]:
+                    gather_data[mr_type][temp_table] = {'-': {}}
+                for temp_report_time in temp_gather_data[mr_type][temp_table]:
+                    for temp_ecid in temp_gather_data[mr_type][temp_table][temp_report_time]:
+                        try:
+                            gather_data[mr_type][temp_table]['-'][temp_ecid] += temp_gather_data[
+                                mr_type][temp_table][temp_report_time][temp_ecid]
+                        except:
+                            gather_data[mr_type][temp_table]['-'][temp_ecid] = temp_gather_data[
+                                mr_type][temp_table][temp_report_time][temp_ecid]
         if mr_type == 'mrs':
             self.mrs_data_data['mrs'] = gather_data['mrs']
         elif mr_type == 'mro':
@@ -844,14 +806,14 @@ class Main:
             # 读取基础数据
             self.mro_earfcn_pci_cellid_relate()
             for table in self.mro_data_data['mro']:
-                with open(os.path.join(self.config_main['target_path'][0],
-                                       '{0}{1}_{2}.csv'.format(table,
-                                                               temp_day_head,
-                                                               time_type)), 'w', newline='') as csvfile:
-                    writer = csv.writer(csvfile)
-                    if table == 'mro_main':
+                if table == 'mro_main':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
                         writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CLEEID', 'EARFCN', 'PCI', 'MR.LteScRSRP',
-                                         'MR.LteScRSRQ', 'MR.LteScTadv（m）', 'MR.LteScPHR', 'MR.LteScAOA',
+                                         'MR.LteScRSRQ', '覆盖距离（m）', 'MR.LteScPHR', 'MR.LteScAOA',
                                          'MR.LteScSinrUL',
                                          'MR.LteScPUSCHPRBNum', 'MR.LteScPDSCHPRBNum', 's_samplint',
                                          'overlap_-3_-113_samplint', 'overlap_-3_-113_ScTadv',
@@ -898,7 +860,12 @@ class Main:
                                                     round(temp_value[17] / temp_value[8] * 100,
                                                           2), ]
                                                 )
-                    elif table == 'mro_ecid' or table == 'mro_ecid_hour':
+                elif table == 'mro_ecid':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format('mro_ecid',
+                                                                   temp_day_head,
+                                                                   'sum')), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
                         writer.writerow(('DAY', 'TIME', 'S_ECID', 'ENBID', 'ENB_CELLID', 'S_EARFCN', 'S_PCI',
                                          'N_ENB_CELLID', 'N_EARFCN', 'N_PCI', 'Distance(m)', 'Scrsrp', 'ScTadv',
                                          'Ncrsrp', ' N_Samplint', '<-10db', '-10db', '-9db', '-8db', '-7db',
@@ -922,19 +889,16 @@ class Main:
                                                  '_'.join((str(int(temp_id[0]) // 256), str(int(temp_id[0]) % 256))),
                                                  temp_id[1], temp_id[2], temp_ncellid, temp_id[3], temp_id[4],
                                                  temp_min_stance] + temp_value)
-                    elif table == 'mro_ecid_yuan' or table == 'mro_ecid_hour_yuan':
-                        if table == 'mro_ecid_yuan':
-                            writer.writerow((
-                                            'ECI_ECI', 'S_ENBID', 'S_CELLID', 'S_PCI', 'S_EARFCN', 'A_ENBID',
-                                            'A_CELLID', 'A_PCI', 'A_EARFCN', 'distance', 'total', 'GE-10db', 'GE-6db',
-                                            'NbrAvg', 'NbrMax', 'NbrMin'
-                            ))
-                        elif table == 'mro_ecid_hour_yuan':
-                            writer.writerow((
-                                            'TIME', 'ECI_ECI', 'S_ENBID', 'S_CELLID', 'S_PCI', 'S_EARFCN', 'A_ENBID',
-                                            'A_CELLID', 'A_PCI', 'A_EARFCN', 'distance', 'total', 'GE-10db', 'GE-6db',
-                                            'NbrAvg', 'NbrMax', 'NbrMin'
-                            ))
+
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format('mro_ecid_yuan',
+                                                                   temp_day_head,
+                                                                   'sum')), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow((
+                            'ECI_ECI', 'S_ENBID', 'S_CELLID', 'S_PCI', 'S_EARFCN', 'A_ENBID', 'A_CELLID', 'A_PCI',
+                            'A_EARFCN', 'distance', 'total', 'GE-10db', 'GE-6db', 'NbrAvg', 'NbrMax', 'NbrMin'
+                        ))
                         for temp_report_time in self.mro_data_data['mro'][table]:
                             for table_id in self.mro_data_data['mro'][table][temp_report_time]:
                                 temp_id = table_id.split('_')
@@ -949,49 +913,37 @@ class Main:
                                     N_enbid = temp_N_ECI[0]
                                     N_cellid = temp_N_ECI[1]
                                 else:
-                                    N_ECI = '-'
-                                    N_enbid = '-'
-                                    N_cellid = '-'
+                                    continue
+                                    # N_ECI = '-'
+                                    # N_enbid = '-'
+                                    # N_cellid = '-'
                                 temp_ECI_ECI = '_'.join((temp_id[0], N_ECI))
                                 temp_value = self.mro_data_data['mro'][table][temp_report_time][table_id]
                                 if temp_value[3] != 0:
                                     temp_value_1 = temp_value[2] // temp_value[3]
                                 else:
                                     temp_value_1 = temp_value[2]
-                                if table == 'mro_ecid_yuan':
-                                    writer.writerow([temp_ECI_ECI,
-                                                     temp_senbid,
-                                                     temp_scellid,
-                                                     temp_id[2],
-                                                     temp_id[1],
-                                                     N_enbid,
-                                                     N_cellid,
-                                                     temp_id[4],
-                                                     temp_id[3],
-                                                     temp_min_stance,
-                                                     temp_value[3],
-                                                     sum(temp_value[5:26]),
-                                                     sum(temp_value[9:22]),
-                                                     temp_value_1 - 140
-                                                     ])
-                                elif table == 'mro_ecid_hour_yuan':
-                                    writer.writerow([temp_report_time,
-                                                     temp_ECI_ECI,
-                                                     temp_senbid,
-                                                     temp_scellid,
-                                                     temp_id[2],
-                                                     temp_id[1],
-                                                     N_enbid,
-                                                     N_cellid,
-                                                     temp_id[4],
-                                                     temp_id[3],
-                                                     temp_min_stance,
-                                                     temp_value[3],
-                                                     sum(temp_value[5:26]),
-                                                     sum(temp_value[9:22]),
-                                                     temp_value_1 - 140
-                                                     ])
-                    elif table == 'mro_rsrp':
+                                writer.writerow([temp_ECI_ECI,
+                                                 temp_senbid,
+                                                 temp_scellid,
+                                                 temp_id[2],
+                                                 temp_id[1],
+                                                 N_enbid,
+                                                 N_cellid,
+                                                 temp_id[4],
+                                                 temp_id[3],
+                                                 temp_min_stance,
+                                                 temp_value[3],
+                                                 sum(temp_value[5:26]),
+                                                 sum(temp_value[9:22]),
+                                                 temp_value_1 - 140
+                                                 ])
+                elif table == 'mro_rsrp':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
                         writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'MR覆盖率（RSRP>=-110)',
                                          'RSRP>=-110计数器', 'ALL计数器',
                                          'MR_RSRP_00', 'MR_RSRP_01', 'MR_RSRP_02', 'MR_RSRP_03', 'MR_RSRP_04',
