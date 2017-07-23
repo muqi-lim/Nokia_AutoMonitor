@@ -53,6 +53,7 @@ def copy_right():
               当解码 mro_ecid 时，会同时生成 mro_ecid 与 mro_ecid_yuan 两张表；
               匹配不到的邻区不 在mro_ecid_yuan 这张表上呈现；
               优化 mro_main 中RSRP值及距离的呈现方式；
+    2017-7-23 增加移动定义的同频重叠覆盖率；
 
     ''')
     print('-' * 36)
@@ -345,6 +346,8 @@ class Main:
 
         temp_id = 1
         ecid = int(mro_object.attrib['id'])
+        # cmcc重叠覆盖率采集数计数器
+        overlap_times = 0
         for value in mro_object.iter('v'):
             temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
             if temp_id == 1:
@@ -360,6 +363,7 @@ class Main:
                                   temp_value[20],
                                   temp_value[21],
                                   1,
+                                  0,
                                   0,
                                   0,
                                   0,
@@ -394,6 +398,15 @@ class Main:
                     temp_mro_main[2][14] = temp_value[2]
                     temp_mro_main[2][15] = temp_value[0]
                     temp_mro_main[2][16] = temp_value[9]
+
+                if temp_value[0] - int(self.config_mro['mro_rsrp_standard'][0]) >= int(
+                        self.config_mro['cmcc_overlap_scell_rsrp'][0]) and temp_value[0] - temp_value[9] <= abs(
+                    int(self.config_mro['cmcc_overlap_db'][0])):
+                    overlap_times += 1
+
+        # 统计cmcc重叠覆盖率
+        if overlap_times >= 3:
+            temp_mro_main[2][18] = 1
 
         # 先汇总，后才传送到queue
         try:
@@ -820,7 +833,8 @@ class Main:
                                          'overlap_-3_-113_s_cell_rsrp', 'overlap_-3_-113_n_cell_rsrp',
                                          'overlap_-6_-113_samplint', 'overlap_-6_-113_ScTadv',
                                          'overlap_-6_-113_s_cell_rsrp', 'overlap_-6_-113_n_cell_rsrp',
-                                         'RSRP>=-110采样点', 'MR覆盖率(RSRP>=-110)'))
+                                         'RSRP>=-110采样点', 'MR覆盖率(RSRP>=-110)',
+                                         'cmcc重叠覆盖采样点', 'CMCC同频重叠覆盖率'))
                         for temp_report_time in self.mro_data_data['mro'][table]:
                             for table_id in self.mro_data_data['mro'][table][temp_report_time]:
                                 temp_value = self.mro_data_data['mro'][table][temp_report_time][table_id]
@@ -844,9 +858,19 @@ class Main:
                                     temp_value_3[2] = temp_value_3[2] - 140
                                 else:
                                     temp_value_3 = temp_value[14:17]
-                                temp_value = list(temp_value_1) + list(temp_value[8:10]) + list(temp_value_2) + list([
-                                    temp_value[13], ]) + list(temp_value_3) + list([temp_value[17], ])
-                                temp_value = list(map(int, temp_value))
+
+                                temp_value_4 = [temp_value[18], 0]
+                                temp_value_4[1] = round(100 * temp_value[18]/temp_value[8], 2)
+                                temp_value_total = list(temp_value_1) + list(temp_value[8:10]) + list(temp_value_2) + list([
+                                    temp_value[13], ]) + list(temp_value_3)
+                                temp_value_total = list(map(int, temp_value_total))
+                                temp_value = temp_value_total + list(
+                                    [temp_value[17],
+                                     round(temp_value[17] / temp_value[8]*100, 2)]
+                                ) + list(
+                                    [temp_value[18],
+                                     round(temp_value[18]/temp_value[8]*100, 2)]
+                                )
                                 temp_id = table_id.split('_')
                                 temp_senbid = str(int(temp_id[0]) // 256)
                                 writer.writerow([temp_day,
@@ -856,9 +880,7 @@ class Main:
                                                  '_'.join((temp_senbid, str(int(temp_id[0]) % 256))),
                                                  temp_id[1],
                                                  temp_id[2]
-                                                 ] + temp_value + [
-                                                    round(temp_value[17] / temp_value[8] * 100,
-                                                          2), ]
+                                                 ] + temp_value
                                                 )
                 elif table == 'mro_ecid':
                     with open(os.path.join(self.config_main['target_path'][0],
