@@ -40,8 +40,11 @@ update log:
 
 2016-11-14 添加最大用户数检测通报；
 2017-1-24 根据春节保障内容添加显示字段，方便监控时使用；
-2017-2-8 增加部分TOP小区字段；
+2017-2-8 增加部分TOP、最大用户数超过门限小区字段；
 2017-2-9 新增自动关闭拥塞小区测量上报开关；
+2017-2-13 监控粒度设置为 raw_monitor 时，当有符合相关条件的top小区，会在邮件主题分别使用【干扰】【拥塞】【休眠】【maxue】
+            标识，已方便邮件查看;
+2017-7-28 新增当同时激活多个网管指标监控时的区分标识
 
 ''')
 
@@ -66,6 +69,11 @@ class Getini:
 
     def automonitor(self):
         self.main = {}
+        # 表头判断
+        self.subject_overcrowding = 0
+        self.subject_sleep = 0
+        self.subject_gps = 0
+        self.subject_maxue = 0
         for h in self.cf.options('main'):
             self.main[h] = self.cf.get('main', h)
 
@@ -188,7 +196,7 @@ class Getini:
             self.kpi[n.lower()] = n_child
 
     def cellinfo(self):
-        f = open('/'.join((self.path, 'cellinfo.csv')), 'r')
+        f = open('/'.join((self.path, 'cellinfo.csv')), 'r', encoding='utf-8-sig')
         k = 0
         self.cellinfo_data = {}
         for i in f.readlines():
@@ -466,7 +474,17 @@ class Email:
     def sendemail(self):
         # self.message = MIMEText(self.maintext, 'plain', 'utf-8')
         self.message = MIMEText(self.maintext, 'html', 'utf-8')
-        self.message['Subject'] = ini.subject
+        temp_subject = db.ip + '-'
+        if ini.config['timetype'] == 'raw_monitor':
+            if ini.subject_overcrowding == 1:
+                temp_subject += '【拥塞】'
+            if ini.subject_sleep == 1:
+                temp_subject += '【休眠】'
+            if ini.subject_gps == 1:
+                temp_subject += '【干扰】'
+            if ini.subject_maxue == 1:
+                temp_subject += '【maxue】'
+        self.message['Subject'] = temp_subject + ini.subject
         self.message['From'] = ini.email['mail_user']
         if len(ini.email['receivers']) > 1:
             self.message['To'] = ';'.join(ini.email['receivers'])
@@ -520,7 +538,11 @@ class Html:
                 if range(j[k], db.kpirange[k]):
                     self.MIMEtext += '<font color="#ff0000"><b>'
                 if str(j[k]).count('.') == 1:
-                    self.MIMEtext += str(round(float(j[k]), 3))
+                    # self.MIMEtext += str(round(float(j[k]), 3))
+                    try:
+                        self.MIMEtext += str(round(float(j[k]), 3))
+                    except:
+                        self.MIMEtext += str(j[k])
                 else:
                     self.MIMEtext += str(j[k])
                 if range(j[k], db.kpirange[k]):
@@ -705,7 +727,7 @@ class Report:
         html.foot()
         # 生成HTML文件
         f_html = open(
-            ''.join((ini.path, '/', 'HTML_TEMP', '/', ini.htmlname, '.html')),
+            ''.join((ini.path, '/', 'HTML_TEMP', '/', db.ip, '-', ini.htmlname, '.html')),
             'w',
             encoding='utf-8')
         f_html.write(html.MIMEtext)
@@ -722,6 +744,7 @@ class Report:
             html.body('h2', '   ◎  GPS故障基站，可能造成大面积干扰，请尽快处理！')
             html.table()
             self.topcelln += 1
+            ini.subject_gps = 1
         # 休眠小区
         db.getdata(ini.sleepingcell_sql)
         db.displaydata(datatype='sleepingcell')
@@ -729,6 +752,7 @@ class Report:
             html.body('h2', '   ◎  休眠小区')
             html.table()
             self.topcelln += 1
+            ini.subject_sleep = 1
         # 高拥塞小区
         db.getdata(
             ini.top_kpi_sql, timetype='top', counter='拥塞次数', threshold=500)
@@ -744,6 +768,7 @@ class Report:
                 html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
             html.table()
             self.topcelln += 1
+            ini.subject_overcrowding = 1
 
         # 最大激活用户数检测
         db.getdata(ini.maxue, timetype='top')
@@ -752,6 +777,7 @@ class Report:
             html.body('h2', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限，请尽快扩容！')
             html.table()
             self.topcelln += 1
+            ini.subject_maxue = 1
 
         # html结束
         html.foot()
