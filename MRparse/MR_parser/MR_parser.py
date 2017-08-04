@@ -13,28 +13,30 @@ import csv
 import traceback
 import math
 import shutil
+import logging
 
 
 def copy_right():
-    print("""
+    logging.info('\n')
+    logging.info(u"""
     --------------------------------
         Welcome to use tools!
         Author : lin_xu_teng
         E_mail : lxuteng@live.cn
     --------------------------------
     """)
-    print('\n')
+    logging.info('\n')
     auth_time = int(time.strftime('%Y%m%d', time.localtime(time.time())))
     if auth_time > 20180101:
-        print('\n')
-        print('-' * 64)
-        print('试用版本已过期，请联系作者！')
-        print('-' * 64)
-        print('\n')
+        logging.info(u'\n')
+        logging.info(u'-' * 64)
+        logging.info(u'试用版本已过期，请联系作者！')
+        logging.info(u'-' * 64)
+        logging.info(u'\n')
         input()
         sys.exit()
 
-    print('''
+    logging.info(u'''
     update log:
 
     2017-3-22 重构，改进算法，支持多进程处理，效率大幅提高；
@@ -54,12 +56,13 @@ def copy_right():
               匹配不到的邻区不 在mro_ecid_yuan 这张表上呈现；
               优化 mro_main 中RSRP值及距离的呈现方式；
     2017-7-23 mro_main表中增加移动定义的同频重叠覆盖率；
+    2017-8-3 新增运行LOG；
 
     ''')
-    print('-' * 36)
-    print('      >>>   starting   <<<')
-    print('-' * 36)
-    print('\n')
+    logging.info(u'-' * 36)
+    logging.info(u'      >>>   starting   <<<')
+    logging.info(u'-' * 36)
+    logging.info(u'\n')
     time.sleep(1)
 
 
@@ -231,7 +234,7 @@ class Main:
         """获取需处理文件"""
 
         if not os.path.exists(path):
-            print('source_path 所设置的目录不存在，请检查！')
+            logging.info('source_path 所设置的目录不存在，请检查！')
             sys.exit()
         for root, dirs, files in os.walk(path):
             for temp_file in files:
@@ -265,7 +268,7 @@ class Main:
                 else:
                     self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
         if len(self.parse_file_list) == 0:
-            print('未获取到源文件，请检查source_path是否设置正确或源文件是否存在！')
+            logging.info('未获取到源文件，请检查source_path是否设置正确或源文件是否存在！')
             sys.exit()
 
     def makedir(self):
@@ -545,16 +548,21 @@ class Main:
     def child_parse_process(self, mr_type, file_type, file_name, queue='', ishead=0):
 
         """文件格式判断、解压、parse xml"""
-
+        log_file_child_num = 0
+        log_file_child_list = []
         if file_type == 'xml':
             try:
                 if self.config_filter['active_filter'] != ['1']:
                     tree = ET.parse(file_name)
                     self.parser(tree, mr_type, queue, ishead)
+                    log_file_child_num += 1
+                    log_file_child_list.append(file_name)
                 else:
                     if self.filter(file_name, 'xml') == 1:
                         tree = ET.parse(file_name)
                         self.parser(tree, mr_type, queue, ishead)
+                        log_file_child_num += 1
+                        log_file_child_list.append(file_name)
             except:
                 traceback.print_exc()
 
@@ -563,28 +571,35 @@ class Main:
                 try:
                     tar_f = tarfile.open(file_name)
                     for temp_file in tar_f.getnames():
-                        # print(temp_file)
                         temp_file_tar_f = tar_f.extractfile(temp_file)
                         temp_file_suffix = temp_file.split('.')[-1].lower()
                         if temp_file_suffix == 'gz':
                             if self.config_filter['active_filter'] != ['1']:
                                 tree = ET.parse(gzip.open(temp_file_tar_f))
                                 self.parser(tree, mr_type, queue, ishead)
+                                log_file_child_num += 1
+                                log_file_child_list.append(temp_file)
                             else:
                                 if self.filter(temp_file, 'tar_gz') == 1:
                                     tree = ET.parse(gzip.open(temp_file_tar_f))
                                     self.parser(tree, mr_type, queue, ishead)
                                     tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                    log_file_child_num += 1
+                                    log_file_child_list.append(temp_file)
 
                         elif temp_file_suffix == 'xml':
                             if self.config_filter['active_filter'] != ['1']:
                                 tree = ET.parse(temp_file_tar_f)
                                 self.parser(tree, mr_type, queue, ishead)
+                                log_file_child_num += 1
+                                log_file_child_list.append(temp_file)
                             else:
                                 if self.filter(temp_file, 'tar_gz') == 1:
                                     tree = ET.parse(temp_file_tar_f)
                                     self.parser(tree, mr_type, queue, ishead)
                                     tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                    log_file_child_num += 1
+                                    log_file_child_list.append(temp_file)
 
                     tar_f.close()
                 except:
@@ -592,10 +607,14 @@ class Main:
                     if self.config_filter['active_filter'] != ['1']:
                         tree = ET.parse(gzip_file)
                         self.parser(tree, mr_type, queue, ishead)
+                        log_file_child_num += 1
+                        log_file_child_list.append(file_name)
                     else:
                         if self.filter(file_name, 'gz') == 1:
                             tree = ET.parse(gzip_file)
                             self.parser(tree, mr_type, queue, ishead)
+                            log_file_child_num += 1
+                            log_file_child_list.append(file_name)
             except:
                 traceback.print_exc()
 
@@ -604,7 +623,9 @@ class Main:
             type_list = {'mrs': self.temp_mrs_data,
                          'mro': self.temp_mro_data}
             self.queue_send(queue, type_list[mr_type])
-            queue.put('prog')
+            # 发送进度条及文件名称，为log；
+            # queue.put('prog')
+            queue.put(['prog', mr_type, file_name, log_file_child_num, log_file_child_list])
             type_list[mr_type] = {}
 
     def parser(self, tree, mr_type, queue, ishead):
@@ -724,6 +745,12 @@ class Main:
                     }
         num_ii = 0
         self.progress(self.all_num[mr_type], num_ii)
+        # 生成log文件
+        f_log_csv = open(''.join((self.config_main['target_path'][0],
+                                  '/LOG_Parse_File_List.csv'
+                                  )), 'w', encoding='utf-8-sig'
+                         )
+        f_log_csv.write('MR_Type,File_Name,Child_File_Num,Child_File_Name\n')
         while 1:
             value = queue.get()
             if value[0] == 'data':
@@ -744,9 +771,19 @@ class Main:
                             all_list[mr_type][table_name] = {}
                             all_list[mr_type][table_name][report_time] = {}
                             all_list[mr_type][table_name][report_time][table_id] = table_value
-            elif value == 'prog':
+            elif value[0] == 'prog':
                 num_ii += 1
                 self.progress(self.all_num[mr_type], num_ii)
+                # 记录log
+                for temp_file in value[4]:
+                    f_log_csv.write(value[1])
+                    f_log_csv.write(',')
+                    f_log_csv.write(os.path.split(value[2])[-1])
+                    f_log_csv.write(',')
+                    f_log_csv.write(str(value[3]))
+                    f_log_csv.write(',')
+                    f_log_csv.write(os.path.split(temp_file)[-1])
+                    f_log_csv.write('\n')
             elif value == 'all_finish':
                 return all_list
 
@@ -952,10 +989,10 @@ class Main:
                                                  temp_value_2] + list(temp_value))
 
     def run_manager(self, mr_type):
-        print('>>> 解码 ', mr_type.upper(), ' 数据...')
+        logging.info(str(''.join(('>>> 解码 ', mr_type.upper(), ' 数据...'))))
         self.get_config(mr_type)
         self.parse_process(mr_type)
-        print('\n>>> {0} 计算及保存...'.format(mr_type))
+        logging.info(u'\n>>> {0} 计算及保存...'.format(mr_type))
         if 'hour' in self.config_main['gather_type']:
             self.writer(mr_type, 'hour')
             if 'sum' in self.config_main['gather_type']:
@@ -963,19 +1000,36 @@ class Main:
                 self.writer(mr_type, 'sum')
         elif 'sum' in self.config_main['gather_type']:
             self.writer(mr_type, 'sum')
-        print('>>> {0} 数据处理完毕！'.format(mr_type))
-        print('-' * 26)
-        print('完成！{0}解码结果保存在此文件夹: '.format(mr_type), self.config_main['target_path'][0])
-        print('-' * 26)
+        logging.info('>>> {0} 数据处理完毕！'.format(mr_type))
+        logging.info('-' * 26)
+        logging.info('完成！{0}解码结果保存在此文件夹: {1}'.format(mr_type, self.config_main['target_path'][0]))
+        logging.info('-' * 26)
 
 
 if __name__ == '__main__':
+
+    main_path = os.path.split(os.path.abspath(sys.argv[0]))[0]
+    cf = configparser.ConfigParser()
+    cf.read(''.join((main_path, '\\', 'config.ini')), encoding='utf-8-SIG')
+    target_path = cf.get('main', 'target_path').split(',')[0]
+    if os.path.exists(''.join((target_path, '/LOG_Parser.txt'))):
+        os.remove(''.join((target_path, '/LOG_Parser.txt')))
+    logging.basicConfig(level=logging.INFO,
+                        format='',
+                        filename=''.join((target_path, '/LOG_Parser.txt')),
+                        filemode='a',
+                        )
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    logging.getLogger('').addHandler(console)
+
     # print('main:', os.getpid())
     multiprocessing.freeze_support()
     star_time = time.time()
     # 初始化配置
     config_manager = Main()
-    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
+    logging.info(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
+    # print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
     parse_type = config_manager.config_main['parse_type']
     # 统计获取到的文件数：
     exit_num = 0
@@ -984,15 +1038,17 @@ if __name__ == '__main__':
         for temp_k in config_manager.parse_file_list[temp_i]:
             num += len(config_manager.parse_file_list[temp_i][temp_k])
         if num != 0:
-            print('>>> 获取到 ', temp_i, ' 文件:', num)
+            logging.info(''.join(('>>> 获取到 ', str(temp_i), ' 文件:', str(num))))
+            # print('>>> 获取到 ', temp_i, ' 文件:', num)
             config_manager.all_num[temp_i] = num
             exit_num = 1
     if exit_num == 0:
-        print('>>> {0} 没有获取到需处理数据，请检查！'.format(config_manager.config_main['source_path'][0]))
+        logging.info('>>> {0} 没有获取到需处理数据，请检查！'.format(config_manager.config_main['source_path'][0]))
+        # print('>>> {0} 没有获取到需处理数据，请检查！'.format(config_manager.config_main['source_path'][0]))
         sys.exit()
 
     for b in parse_type:
         if b in config_manager.parse_file_list:
             config_manager.run_manager(b.lower())
-    print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
-    print('>>> 历时：', time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(time.time() - star_time)))
+    logging.info(''.join((time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))))
+    logging.info(''.join(('>>> 历时：', time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(time.time() - star_time)))))
