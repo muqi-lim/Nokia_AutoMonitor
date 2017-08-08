@@ -56,7 +56,7 @@ def copy_right():
               匹配不到的邻区不 在mro_ecid_yuan 这张表上呈现；
               优化 mro_main 中RSRP值及距离的呈现方式；
     2017-7-23 mro_main表中增加移动定义的同频重叠覆盖率；
-    2017-8-3 新增运行LOG；
+    2017-8-8 新增运行LOG；
 
     ''')
     logging.info(u'-' * 36)
@@ -175,6 +175,13 @@ class Main:
         if len(self.parse_file_list) != 0:
             if not os.path.isdir(self.config_main['target_path'][0]):
                 os.makedirs(self.config_main['target_path'][0])
+        # 生成log文件
+        f_log_csv = open(''.join((self.config_main['target_path'][0],
+                                  '/LOG_Parse_File_List.csv'
+                                  )), 'w', encoding='utf-8-sig'
+                         )
+        f_log_csv.write('MR_Type,File_Name,Child_File_Num,Child_File_Name\n')
+        f_log_csv.close()
 
     def get_config(self, mr_type):
 
@@ -748,9 +755,8 @@ class Main:
         # 生成log文件
         f_log_csv = open(''.join((self.config_main['target_path'][0],
                                   '/LOG_Parse_File_List.csv'
-                                  )), 'w', encoding='utf-8-sig'
+                                  )), 'a', encoding='utf-8-sig'
                          )
-        f_log_csv.write('MR_Type,File_Name,Child_File_Num,Child_File_Name\n')
         while 1:
             value = queue.get()
             if value[0] == 'data':
@@ -1012,6 +1018,9 @@ if __name__ == '__main__':
     cf = configparser.ConfigParser()
     cf.read(''.join((main_path, '\\', 'config.ini')), encoding='utf-8-SIG')
     target_path = cf.get('main', 'target_path').split(',')[0]
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')
+    if cf.get('main', 'timing').split(',')[0] == '1':
+        target_path = '\\'.join((target_path, yesterday))
     if os.path.exists(''.join((target_path, '/LOG_Parser.txt'))):
         os.remove(''.join((target_path, '/LOG_Parser.txt')))
     logging.basicConfig(level=logging.INFO,
