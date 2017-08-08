@@ -791,6 +791,7 @@ class Main:
                     f_log_csv.write(os.path.split(temp_file)[-1])
                     f_log_csv.write('\n')
             elif value == 'all_finish':
+                f_log_csv.close()
                 return all_list
 
     def writer(self, mr_type, time_type):
@@ -1021,8 +1022,8 @@ if __name__ == '__main__':
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')
     if cf.get('main', 'timing').split(',')[0] == '1':
         target_path = '\\'.join((target_path, yesterday))
-    if os.path.exists(''.join((target_path, '/LOG_Parser.txt'))):
-        os.remove(''.join((target_path, '/LOG_Parser.txt')))
+    # if os.path.exists(''.join((target_path, '/LOG_Parser.txt'))):
+    #     os.remove(''.join((target_path, '/LOG_Parser.txt')))
     logging.basicConfig(level=logging.INFO,
                         format='',
                         filename=''.join((target_path, '/LOG_Parser.txt')),
@@ -1061,3 +1062,6 @@ if __name__ == '__main__':
             config_manager.run_manager(b.lower())
     logging.info(''.join((time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))))
     logging.info(''.join(('>>> 历时：', time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(time.time() - star_time)))))
+    logging.info('\n'*2)
+    logging.info('='*128)
+    logging.info('='*128)
