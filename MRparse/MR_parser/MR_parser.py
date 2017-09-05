@@ -57,6 +57,7 @@ def copy_right():
               优化 mro_main 中RSRP值及距离的呈现方式；
     2017-7-23 mro_main表中增加移动定义的同频重叠覆盖率；
     2017-8-8 新增运行LOG；
+    2017-9-5 新增MRO解码AOA表；
 
     ''')
     logging.info(u'-' * 36)
@@ -476,6 +477,27 @@ class Main:
                         self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: numpy.array(temp_mro_rsrp)}
             break
 
+    def mro_aoa(self, mro_object, report_time):
+        ecid = int(mro_object.attrib['id'])
+        for value in mro_object.iter('v'):
+            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            temp_mro_aoa[temp_value[5]//10] = 1
+            try:
+                self.temp_mro_data[report_time]['mro_aoa'][ecid] += numpy.array(temp_mro_aoa)
+            except:
+                try:
+                    self.temp_mro_data[report_time]['mro_aoa'][ecid] = numpy.array(temp_mro_aoa)
+                except:
+                    try:
+                        self.temp_mro_data[report_time]['mro_aoa'] = {ecid: numpy.array(temp_mro_aoa)}
+                    except:
+                        self.temp_mro_data[report_time] = {}
+                        self.temp_mro_data[report_time]['mro_aoa'] = {ecid: numpy.array(temp_mro_aoa)}
+            break
+
     def get_report_time(self, tree):
 
         """获取报告时段"""
@@ -666,6 +688,7 @@ class Main:
                 table_list = {'mro_main': self.mro_main,
                               'mro_ecid': self.mro_ecid,
                               'mro_rsrp': self.mro_rsrp,
+                              'mro_aoa': self.mro_aoa,
                               }
                 report_time = self.get_report_time(tree)
                 for measurement in tree.iter('measurement'):
@@ -994,6 +1017,32 @@ class Main:
                                                  temp_value_3,
                                                  temp_value_1,
                                                  temp_value_2] + list(temp_value))
+                elif table == 'mro_aoa':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID',
+                                         'MR_AOA_00', 'MR_AOA_01', 'MR_AOA_02', 'MR_AOA_03', 'MR_AOA_04', 'MR_AOA_05',
+                                         'MR_AOA_06', 'MR_AOA_07', 'MR_AOA_08', 'MR_AOA_09', 'MR_AOA_10', 'MR_AOA_11',
+                                         'MR_AOA_12', 'MR_AOA_13', 'MR_AOA_14', 'MR_AOA_15', 'MR_AOA_16', 'MR_AOA_17',
+                                         'MR_AOA_18', 'MR_AOA_19', 'MR_AOA_20', 'MR_AOA_21', 'MR_AOA_22', 'MR_AOA_23',
+                                         'MR_AOA_24', 'MR_AOA_25', 'MR_AOA_26', 'MR_AOA_27', 'MR_AOA_28', 'MR_AOA_29',
+                                         'MR_AOA_30', 'MR_AOA_31', 'MR_AOA_32', 'MR_AOA_33', 'MR_AOA_34', 'MR_AOA_35',
+                                         'MR_AOA_36', 'MR_AOA_37', 'MR_AOA_38', 'MR_AOA_39', 'MR_AOA_40', 'MR_AOA_41',
+                                         'MR_AOA_42', 'MR_AOA_43', 'MR_AOA_44', 'MR_AOA_45', 'MR_AOA_46', 'MR_AOA_47',
+                                         'MR_AOA_48', 'MR_AOA_49', 'MR_AOA_50', 'MR_AOA_51', 'MR_AOA_52', 'MR_AOA_53',
+                                         'MR_AOA_54', 'MR_AOA_55', 'MR_AOA_56', 'MR_AOA_57', 'MR_AOA_58', 'MR_AOA_59',
+                                         'MR_AOA_60', 'MR_AOA_61', 'MR_AOA_62', 'MR_AOA_63', 'MR_AOA_64', 'MR_AOA_65',
+                                         'MR_AOA_66', 'MR_AOA_67', 'MR_AOA_68', 'MR_AOA_69', 'MR_AOA_70', 'MR_AOA_71'))
+                        for temp_report_time in self.mro_data_data['mro'][table]:
+                            for ecid_id in self.mro_data_data['mro'][table][temp_report_time]:
+                                temp_value = self.mro_data_data['mro'][table][temp_report_time][ecid_id]
+                                temp_enbid = str(int(ecid_id) // 256)
+                                temp_enb_cellid = '_'.join((str(int(ecid_id) // 256), str(int(ecid_id) % 256)))
+                                writer.writerow([temp_day, temp_report_time, ecid_id, temp_enbid, temp_enb_cellid
+                                                 ] + list(temp_value))
 
     def run_manager(self, mr_type):
         logging.info(str(''.join(('>>> 解码 ', mr_type.upper(), ' 数据...'))))
@@ -1022,6 +1071,8 @@ if __name__ == '__main__':
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')
     if cf.get('main', 'timing').split(',')[0] == '1':
         target_path = '\\'.join((target_path, yesterday))
+    if not os.path.exists(target_path):
+        os.makedirs(target_path)
     # if os.path.exists(''.join((target_path, '/LOG_Parser.txt'))):
     #     os.remove(''.join((target_path, '/LOG_Parser.txt')))
     logging.basicConfig(level=logging.INFO,
