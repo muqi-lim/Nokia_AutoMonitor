@@ -35,6 +35,15 @@ class Main:
         for temp in cf.options('main'):
             self.config[temp] = cf.get('main', temp).split(',')
 
+        # 设置并发门限值，控制在100以内
+        if self.config['concurrent'][0] == ['']:
+            self.config['concurrent'] = ['10']
+        try:
+            if int(self.config['concurrent'][0]) >= 100:
+                self.config['concurrent'] = ['100']
+        except:
+            self.config['concurrent'] = ['10']
+
     def get_files(self):
         print('>>> 获取本地数据...')
         self.file_list = []
@@ -49,19 +58,40 @@ class Main:
         else:
             print('>>> 获取原始文件：', self.file_n)
 
+    def time_diff(self, str_time):
+        time_time = datetime.datetime.strptime(str_time, "%Y%m%d%H%M%S")
+        time_time_diff = time_time + datetime.timedelta(hours=8)
+        return datetime.datetime.strftime(time_time_diff, "%Y/%m/%d %H:%M:%S")
+
     def circuit(self):
-        # 调用工具，获取基站数据
-        if self.config['online_get_file'] == ['1']:
-            print('>>> 开始连接基站，获取log...')
-            os.chdir(self.config['cli_path'][0])
-            cmd_text = ''.join((
-                'collectfiles.bat  -pw Nemuadmin:nemuuser -freqhistory -ipfile ',
-                self.main_path,
-                '/addresses.txt -outdir ',
-                self.main_path,
-                '/TEMP'
-            ))
-            os.system(cmd_text)
+        # 读取IP文件
+        with open(os.path.join(self.main_path, 'addresses.txt')) as f_ip:
+            ip_list = [temp_ip for temp_ip in f_ip]
+        # 设置每次连接获取IP数量
+        get_ip_num = 200
+        if len(ip_list)//get_ip_num == 0:
+            times = 1
+        else:
+            times = len(ip_list)//get_ip_num + 1
+        for temp_times in range(times):
+            f_temp_ip = open(os.path.join(self.main_path, 'TEMP', 'temp_addresses.txt'), 'w', encoding='utf-8')
+            f_temp_ip.write(''.join(ip_list[temp_times*get_ip_num:temp_times*get_ip_num+get_ip_num]))
+            f_temp_ip.close()
+
+            # 调用工具，获取基站数据
+            if self.config['online_get_file'] == ['1']:
+                print('>>> 开始连接基站，获取log...')
+                os.chdir(self.config['cli_path'][0])
+                cmd_text = ''.join((
+                    'collectfiles.bat  -pw Nemuadmin:nemuuser -attempts 1 -connectout 10 -freqhistory -ipfile ',
+                    self.main_path,
+                    '/TEMP/temp_addresses.txt -outdir ',
+                    self.main_path,
+                    '/TEMP',
+                    ' -concurrent ',
+                    self.config['concurrent'][0]
+                ))
+                os.system(cmd_text)
         # 获取本地log数据
         self.get_files()
 
@@ -119,12 +149,17 @@ class Main:
                 for k in j:
                     temp_data[k.tag] = k.text
                 data[temp_data['_observationTime']] = temp_data
-                # self.data[file_name][temp_data['_observationTime']] = temp_data
+        # 兼容所有
+        # for i in tree.getiterator(tag='FrequencyHistoryDataReport'):
+        #     for j in i:
+        #         for k in j:
+        #             temp_data[k.tag] = k.text
+        #         data[temp_data['_observationTime']] = temp_data
             # 只保留TOP
             temp_head_list = sorted(map(int, data.keys()))
             temp_head_list_top_n = map(str, temp_head_list[-int(self.config['items'][0]):])
             for temp_i in temp_head_list_top_n:
-                self.data[file_name][temp_i] = data[temp_i]
+                self.data[file_name][self.time_diff(temp_i)] = data[temp_i]
 
     def write(self):
         self.head_list_head = ['file_name',
@@ -150,11 +185,15 @@ class Main:
                     f.write(',')
                     f.write(temp_file_name.split('_')[0])
                     f.write(',')
-                    temp_time_format = '_'.join((temp_time[0:8], temp_time[8:10], temp_time[10:12], temp_time[12:]))
-                    f.write(temp_time_format)
+                    # temp_time_format = '_'.join((temp_time[0:8], temp_time[8:10], temp_time[10:12], temp_time[12:]))
+                    # f.write(temp_time_format)
+                    f.write(temp_time)
                     f.write(',')
                     for temp_item in self.head_list:
-                        f.write(self.data[temp_file_name][temp_time][temp_item])
+                        if self.data[temp_file_name][temp_time][temp_item] is None:
+                            f.write('-')
+                        else:
+                            f.write(self.data[temp_file_name][temp_time][temp_item])
                         f.write(',')
                     f.write('\n')
 
@@ -222,7 +261,7 @@ class Main:
         with open(os.path.join(self.main_path,
                                'TEMP',
                                ''.join((self.config['subject'][0], '-', self.now_time, '.html'))
-                               ), 'w',encoding='utf-8') as f_html:
+                               ), 'w', encoding='utf-8') as f_html:
             f_html.write(self.MIMEtext)
 
     def email(self):
