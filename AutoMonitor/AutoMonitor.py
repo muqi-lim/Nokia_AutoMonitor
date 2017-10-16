@@ -45,6 +45,7 @@ update log:
 2017-2-13 监控粒度设置为 raw_monitor 时，当有符合相关条件的top小区，会在邮件主题分别使用【干扰】【拥塞】【休眠】【maxue】
             标识，已方便邮件查看;
 2017-7-28 新增当同时激活多个网管指标监控时的区分标识
+2017-9-24 兼容TL16A版本基站通报及监控；添加2017年下半年考核指标通报；
 
 ''')
 
@@ -111,7 +112,8 @@ class Getini:
             self.starttime_topn = (
                 datetime.date.today() - datetime.timedelta(days=1)
             ).strftime('%Y%m%d')
-            self.endtime_topn = datetime.date.today().strftime('%Y%m%d')
+            # self.endtime_topn = datetime.date.today().strftime('%Y%m%d')
+            self.endtime_topn = self.starttime_topn
             self.mainsql = 'main_kpi_day'
             self.mainvosql = 'main_vokpi_day'
             self.top_volte_sql = 'top_volte_day'
@@ -233,7 +235,7 @@ class Db:
                 counter='default',
                 threshold='0'):
         threshold = str(threshold)
-        print('>>> 开始获取数据...')
+        print(''.join(('>>> 开始获取数据 ', ini.SQL_name[sqlname][0], ' ...')))
         sqlfullname = ''.join(
             (ini.sqlpath, '/', ini.SQL_name[sqlname][0], '.sql'))
         try:
@@ -268,48 +270,43 @@ class Db:
             self.kpi_dict = ini.kpi
 
         def top_srvcc():
-            self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
+            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
                              'esrvcc成功率'.lower(): ('', ''),
                              'ESRVCC请求次数'.lower(): ('', ''),
                              'ESRVCC成功次数'.lower(): ('', ''),
-                             'ESRVCC失败次数'.lower(): ('!=', '0'),
+                             'ESRVCC切换失败次数'.lower(): ('!=', '0'),
                              'QCI1话务量Erl'.lower(): ('', ''),
-                             'QCI2话务量Erl'.lower(): ('', ''),
-                             'QCI1流量Mb'.lower(): ('', ''),
-                             'QCI2流量Mb'.lower(): ('', ''),
                              'QCI1最大用户数'.lower(): ('', ''),
-                             'QCI2最大用户数'.lower(): ('', ''),
+                             'esrvcc切换失败次数ZB'.lower(): ('!=', '0'),
+                             'esrvcc请求次数ZB'.lower(): ('', ''),
+                             'esrvcc成功率ZB'.lower(): ('', ''),
                              }
 
         def top_qci1connect():
-            self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
+            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
                              'qci1_erab建立成功率'.lower(): ('', ''),
                              'qci1_erab建立请求次数'.lower(): ('', ''),
                              'qci1_erab建立失败次数'.lower(): ('!=', '0'),
                              'QCI1话务量Erl'.lower(): ('', ''),
-                             'QCI1流量Mb'.lower(): ('', ''),
                              'QCI1最大用户数'.lower(): ('', ''),
                              }
 
         def top_qci2connect():
-            self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
+            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
                              'qci2_erab建立成功率'.lower(): ('', ''),
                              'qci2_erab建立请求次数'.lower(): ('', ''),
                              'qci2_erab建立失败次数'.lower(): ('!=', '0'),
                              'QCI2话务量Erl'.lower(): ('', ''),
-                             'QCI2流量Mb'.lower(): ('', ''),
                              'QCI2最大用户数'.lower(): ('', ''),
                              }
 
         def top_qci1drop():
-            self.kpi_dict = {'ENB_CEL'.lower(): ('', 'cellname'),
+            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
                              'QCI1掉线率小区级'.lower(): ('', ''),
                              'QCI1掉线分母小区级'.lower(): ('', ''),
                              'QCI1掉线次数'.lower(): ('!=', '0'),
                              'QCI1话务量Erl'.lower(): ('', ''),
                              'QCI2话务量Erl'.lower(): ('', ''),
-                             'QCI1流量Mb'.lower(): ('', ''),
-                             'QCI2流量Mb'.lower(): ('', ''),
                              'QCI1最大用户数'.lower(): ('', ''),
                              'QCI2最大用户数'.lower(): ('', ''),
                              }
@@ -397,7 +394,7 @@ class Db:
                              'PUSCH_RIP'.lower(): ('>=', '-110')}
 
         def alarm():
-            self.kpi_dict = {'ENBID'.lower(): ('', ''),
+            self.kpi_dict = {'lnbtsid'.lower(): ('', ''),
                              'IP'.lower(): ('', ''),
                              'NAME'.lower(): ('', ''),
                              'ALARM_TIME'.lower(): ('', ''),
@@ -509,7 +506,9 @@ class Html:
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <title>诺基亚日常监控报告_v1.5</title>
+                <title>'''
+        self.MIMEtext += ini.title
+        self.MIMEtext += '''</title>
             </head>
             <body>'''
 
@@ -602,17 +601,7 @@ class Report:
         db.getdata(ini.mainsql)
         db.displaydata()
         html.head()
-        # html.body('h1', 'HI 潮州最近时段指标指标情况如下')
-
         html.body('h1', '一、概况')
-
-        # 获取关键kpi指标
-        html.body('h2', '   关键kpi指标：')
-        html.table()
-        db.getdata(ini.mainvosql)
-        db.displaydata()
-        # 获取volte指标
-        html.body('h2', '   VOLTE指标')
         html.table()
 
         # 休眠小区
@@ -629,11 +618,11 @@ class Report:
             html.body('h2', '  最大激活用户数检测')
 
             if type == 'hour':
-                html.body('h4', '   最近一小时最大激活用户数超过配置门限小区，请尽快扩容！')
+                html.body('h4', '   最近一小时最大激活用户数超过配置门限小区，请尽快处理！')
             elif type == 'day':
-                html.body('h4', '   昨天最大激活用户数超过配置门限小区，请尽快扩容！')
+                html.body('h4', '   昨天最大激活用户数超过配置门限小区，请尽快处理！')
             elif type == 'raw':
-                html.body('h4', '   最近15分钟最大激活用户数超过配置门限小区，请尽快扩容！')
+                html.body('h4', '   最近15分钟最大激活用户数超过配置门限小区，请尽快处理！')
             html.table()
             self.topcelln += 1
 
@@ -647,7 +636,7 @@ class Report:
 
         # html.body('h2', '  1、VOLTE')
         # esrvcc成功率
-        db.getdata(ini.top_volte_sql, timetype='top', counter='esrvcc失败次数')
+        db.getdata(ini.top_volte_sql, timetype='top', counter='esrvcc切换失败次数ZB')
         db.displaydata(datatype='top_srvcc')
         if len(db.dbdata) != 0:
             html.body('h3', '    ◎  esrvcc成功率')
@@ -726,8 +715,12 @@ class Report:
         # html结束
         html.foot()
         # 生成HTML文件
+        # f_html = open(
+        #     ''.join((ini.path, '/', 'HTML_TEMP', '/', db.ip, '-', ini.htmlname, '.html')),
+        #     'w',
+        #     encoding='utf-8')
         f_html = open(
-            ''.join((ini.path, '/', 'HTML_TEMP', '/', db.ip, '-', ini.htmlname, '.html')),
+            ''.join((ini.path, '/', 'HTML_TEMP', '/', ini.title, '.html')),
             'w',
             encoding='utf-8')
         f_html.write(html.MIMEtext)
@@ -783,9 +776,13 @@ class Report:
         html.foot()
         # 生成HTML文件
         if self.topcelln != 0:
+            # f_html = open(
+            #     ''.join((ini.path, '/', 'HTML_TEMP', '/', ini.htmlname,
+            #              '_monitor.html')),
+            #     'w',
+            #     encoding='utf-8')
             f_html = open(
-                ''.join((ini.path, '/', 'HTML_TEMP', '/', ini.htmlname,
-                         '_monitor.html')),
+                ''.join((ini.path, '/', 'HTML_TEMP', '/', ini.title, '.html')),
                 'w',
                 encoding='utf-8')
             f_html.write(html.MIMEtext)
@@ -804,6 +801,10 @@ if __name__ == '__main__':
         db.db_connect()
         if db.connectstate == 0:
             sys.exit()
+
+        # 获取生成html文件名及邮件头名
+        ini.title = '_'.join((ini.db[db_child][0], ini.cf.get('email', 'subject'), ini.htmlname))
+
         db_report = Report()
 
         report_type = {'day': db_report.day_hour_report,
