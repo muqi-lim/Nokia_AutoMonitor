@@ -46,6 +46,8 @@ update log:
             标识，已方便邮件查看;
 2017-7-28 新增当同时激活多个网管指标监控时的区分标识
 2017-9-24 兼容TL16A版本基站通报及监控；添加2017年下半年考核指标通报；
+2017-10-16 新增零流量小区通报；
+
 
 ''')
 
@@ -73,6 +75,7 @@ class Getini:
         # 表头判断
         self.subject_overcrowding = 0
         self.subject_sleep = 0
+        self.subject_sleep_0 = 0
         self.subject_gps = 0
         self.subject_maxue = 0
         for h in self.cf.options('main'):
@@ -119,6 +122,7 @@ class Getini:
             self.top_volte_sql = 'top_volte_day'
             self.top_kpi_sql = 'top_kpi_day'
             self.sleepingcell_sql = 'sleepingcell'
+            self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.htmlname = (datetime.date.today() - datetime.timedelta(days=1)
                              ).strftime('%Y%m%d')
             self.maxue = 'maxue_day'
@@ -139,6 +143,7 @@ class Getini:
             self.top_volte_sql = 'top_volte_hour'
             self.top_kpi_sql = 'top_kpi_hour'
             self.sleepingcell_sql = 'sleepingcell'
+            self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H')
             self.maxue = 'maxue_hour'
             if self.actemail == '1':
@@ -162,6 +167,8 @@ class Getini:
             self.top_kpi_sql = 'top_kpi_raw'
             self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H%M')
             self.sleepingcell_sql = 'sleepingcell_raw'
+            self.sleep_cell_16a_raw = 'sleep_cell_16a_raw'
+            self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.maxue = 'maxue_raw'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
@@ -375,6 +382,26 @@ class Db:
                              'DRX激活子帧数'.lower(): ('', ''),
                              'DRX睡眠子帧数'.lower(): ('', '')}
 
+        def sleep_cell_16a():
+            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
+                             'BTS_VERSION'.lower(): ('', ''),
+                             '休眠时段数'.lower(): ('', ''),
+                             '带宽'.lower(): ('', ''),
+                             '管理员闭锁状态'.lower(): ('', ''),
+                             'EARFCN'.lower(): ('', ''),
+                             'TYPE'.lower(): ('', ''),
+                             '可用率'.lower(): ('', ''),
+                             'RRC连接数'.lower(): ('', ''),
+                             '最大RRC连接数'.lower(): ('', ''),
+                             'RRC连接建立成功次数'.lower(): ('', ''),
+                             'SRB1建立尝试次数'.lower(): ('', ''),
+                             'SRB1建立成功次数'.lower(): ('', ''),
+                             'SRB1建立失败次数'.lower(): ('', ''),
+                             'DRX激活子帧数'.lower(): ('', ''),
+                             'DRX睡眠子帧数'.lower(): ('', ''),
+                             '昨天总流量MB'.lower(): ('', ''),
+                             }
+
         def overcrowding():
             self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
                              'bts_version'.lower(): ('', ''),
@@ -428,6 +455,7 @@ class Db:
                         'top_radiodrop': top_radiodrop,
                         'top_erabdrop': top_erabdrop,
                         'sleepingcell': sleepingcell,
+                        'sleep_cell_16a': sleep_cell_16a,
                         'overcrowding': overcrowding,
                         'alarm': alarm,
                         'maxue': maxue}
@@ -438,7 +466,7 @@ class Db:
              self.kpi_dict[child[0].lower()])
             for child in self.dateget.description
             if child[0].lower() in self.kpi_dict
-            ]
+        ]
         self.headdata = [i[0] for i in self.headlist]
         self.headindex = [i[1] for i in self.headlist]
         self.kpirange = {i[1]: i[2] for i in self.headlist}
@@ -477,6 +505,8 @@ class Email:
                 temp_subject += '【拥塞】'
             if ini.subject_sleep == 1:
                 temp_subject += '【休眠】'
+            if ini.subject_sleep_0 == 1:
+                temp_subject += '【零流量】'
             if ini.subject_gps == 1:
                 temp_subject += '【干扰】'
             if ini.subject_maxue == 1:
@@ -609,6 +639,13 @@ class Report:
         db.displaydata(datatype='sleepingcell')
         if len(db.dbdata) != 0:
             html.body('h2', '  休眠小区')
+            html.table()
+
+        # 休眠小区1
+        db.getdata(ini.sleep_cell_16a_hour)
+        db.displaydata(datatype='sleep_cell_16a')
+        if len(db.dbdata) != 0:
+            html.body('h2', '  休眠及零流量小区')
             html.table()
 
         # 最大激活用户数检测
@@ -746,6 +783,14 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_sleep = 1
+        # 休眠及零流量小区
+        db.getdata(ini.sleep_cell_16a_raw)
+        db.displaydata(datatype='sleep_cell_16a')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  休眠及零流量小区')
+            html.table()
+            self.topcelln += 1
+            ini.subject_sleep_0 = 1
         # 高拥塞小区
         db.getdata(
             ini.top_kpi_sql, timetype='top', counter='拥塞次数', threshold=500)
@@ -867,7 +912,7 @@ if __name__ == '__main__':
                     f_dml.write(',')
                     f_dml.write(str(disabledpmmeasurement_list[kk]))
                     f_dml.write(',')
-                    with open(''.join((ini.path,'/CommisionTool/temp/', kk, '.log')), 'r') as f_log:
+                    with open(''.join((ini.path, '/CommisionTool/temp/', kk, '.log')), 'r') as f_log:
                         log_info = f_log.read()
                         if 'Successfully activated' in log_info:
                             f_dml.write('Successfully Disabeled PM Measurement')
