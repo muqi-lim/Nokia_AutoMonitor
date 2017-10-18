@@ -47,6 +47,7 @@ update log:
 2017-7-28 新增当同时激活多个网管指标监控时的区分标识
 2017-9-24 兼容TL16A版本基站通报及监控；添加2017年下半年考核指标通报；
 2017-10-16 新增零流量小区通报；
+2017-10-18 优化程序config结构；
 
 
 ''')
@@ -69,6 +70,8 @@ class Getini:
     def __init__(self, inifile='config.ini', inipath=path):
         self.cf = configparser.ConfigParser()
         self.cf.read(''.join((inipath, '/', inifile)), encoding='utf-8-SIG')
+        self.cf_sql = configparser.ConfigParser()
+        self.cf_sql.read(''.join((inipath, '/', 'config_sql.ini')), encoding='utf-8-SIG')
 
     def automonitor(self):
         self.main = {}
@@ -186,8 +189,8 @@ class Getini:
             self.db[j] = j_child
 
         self.SQL_name = {}
-        for k in self.cf.options('SQL_name'):
-            k_child = self.cf.get('SQL_name', k).split(',')
+        for k in self.cf_sql.options('SQL_name'):
+            k_child = self.cf_sql.get('SQL_name', k).split(',')
             if len(k_child) != 3:
                 print('>>> [SQL_name] 设置异常，请检查！')
                 sys.exit()
@@ -197,8 +200,8 @@ class Getini:
         self.displaytext = ''
 
         self.kpi = {}
-        for n in self.cf.options('kpi'):
-            n_child = self.cf.get('kpi', n).split(',')
+        for n in self.cf_sql.options('kpi'):
+            n_child = self.cf_sql.get('kpi', n).split(',')
             if len(n_child) != 2:
                 print('>>> [kpi] 设置异常，请检查！')
                 sys.exit()
@@ -240,7 +243,8 @@ class Db:
                 sqlname,
                 timetype='main',
                 counter='default',
-                threshold='0'):
+                threshold='0',
+                top_n='11'):
         threshold = str(threshold)
         print(''.join(('>>> 开始获取数据 ', ini.SQL_name[sqlname][0], ' ...')))
         sqlfullname = ''.join(
@@ -266,6 +270,11 @@ class Db:
             sqltext = sqltext.replace('&4', threshold)
         except:
             pass
+        # 设置显示top小区数
+        try:
+            sqltext = sqltext.replace('&5', top_n)
+        except:
+            pass
 
         try:
             self.dateget = self.cc.execute(sqltext)
@@ -277,172 +286,166 @@ class Db:
             self.kpi_dict = ini.kpi
 
         def top_srvcc():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'esrvcc成功率'.lower(): ('', ''),
-                             'ESRVCC请求次数'.lower(): ('', ''),
-                             'ESRVCC成功次数'.lower(): ('', ''),
-                             'ESRVCC切换失败次数'.lower(): ('!=', '0'),
-                             'QCI1话务量Erl'.lower(): ('', ''),
-                             'QCI1最大用户数'.lower(): ('', ''),
-                             'esrvcc切换失败次数ZB'.lower(): ('!=', '0'),
-                             'esrvcc请求次数ZB'.lower(): ('', ''),
-                             'esrvcc成功率ZB'.lower(): ('', ''),
-                             }
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_srvcc'):
+                n_child = ini.cf_sql.get('top_srvcc', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_qci1connect():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'qci1_erab建立成功率'.lower(): ('', ''),
-                             'qci1_erab建立请求次数'.lower(): ('', ''),
-                             'qci1_erab建立失败次数'.lower(): ('!=', '0'),
-                             'QCI1话务量Erl'.lower(): ('', ''),
-                             'QCI1最大用户数'.lower(): ('', ''),
-                             }
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_qci1connect'):
+                n_child = ini.cf_sql.get('top_qci1connect', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_qci2connect():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'qci2_erab建立成功率'.lower(): ('', ''),
-                             'qci2_erab建立请求次数'.lower(): ('', ''),
-                             'qci2_erab建立失败次数'.lower(): ('!=', '0'),
-                             'QCI2话务量Erl'.lower(): ('', ''),
-                             'QCI2最大用户数'.lower(): ('', ''),
-                             }
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_qci2connect'):
+                n_child = ini.cf_sql.get('top_qci2connect', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_qci1drop():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'QCI1掉线率小区级'.lower(): ('', ''),
-                             'QCI1掉线分母小区级'.lower(): ('', ''),
-                             'QCI1掉线次数'.lower(): ('!=', '0'),
-                             'QCI1话务量Erl'.lower(): ('', ''),
-                             'QCI2话务量Erl'.lower(): ('', ''),
-                             'QCI1最大用户数'.lower(): ('', ''),
-                             'QCI2最大用户数'.lower(): ('', ''),
-                             }
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_qci1drop'):
+                n_child = ini.cf_sql.get('top_qci1drop', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_rrcconnect():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'bts_version'.lower(): ('', ''),
-                             'RRC连接建立成功率'.lower(): ('', ''),
-                             'RRC连接建立请求次数'.lower(): ('', ''),
-                             'RRC连接建立失败次数'.lower(): ('!=', '0'),
-                             '拥塞次数'.lower(): ('>', '0'),
-                             '控制面过负荷拥塞'.lower(): ('>', '0'),
-                             '用户面过负荷拥塞'.lower(): ('>', '0'),
-                             'PUCCH资源不足拥塞'.lower(): ('>', '0'),
-                             '最大RRC受限拥塞'.lower(): ('>', '0'),
-                             'MME过负荷拥塞'.lower(): ('>', '0'),
-                             'RRC最大连接数'.lower(): ('', ''),
-                             '最大激活用户数'.lower(): ('', ''),
-                             '有效RRC连接最大数'.lower(): ('', ''),
-                             'PUSCH_RIP'.lower(): ('>=', '-110')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_rrcconnect'):
+                n_child = ini.cf_sql.get('top_rrcconnect', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_erabconnect():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'bts_version'.lower(): ('', ''),
-                             'ERAB建立成功率'.lower(): ('', ''),
-                             'ERAB建立成功数'.lower(): ('', ''),
-                             'ERAB建立请求数'.lower(): ('', ''),
-                             'ERAB建立失败数'.lower(): ('!=', '0'),
-                             'PUSCH_RIP'.lower(): ('>=', '-110')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_erabconnect'):
+                n_child = ini.cf_sql.get('top_erabconnect', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_handover():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'bts_version'.lower(): ('', ''),
-                             '切换成功率QQ'.lower(): ('', ''),
-                             '切换成功次数'.lower(): ('', ''),
-                             '切换请求次数ZB'.lower(): ('', ''),
-                             '切换请求次数QQ'.lower(): ('', ''),
-                             '切换失败次数QQ'.lower(): ('!=', '0'),
-                             'PUSCH_RIP'.lower(): ('>=', '-110')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_handover'):
+                n_child = ini.cf_sql.get('top_handover', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_radiodrop():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'bts_version'.lower(): ('', ''),
-                             '无线掉线率'.lower(): ('', ''),
-                             '切换失败次数QQ'.lower(): ('!=', '0'),
-                             '切换请求次数QQ'.lower(): ('', ''),
-                             '切换请求次数ZB'.lower(): ('', ''),
-                             '无线掉线率分母'.lower(): ('', ''),
-                             '无线掉线率分子'.lower(): ('!=', '0'),
-                             'PUSCH_RIP'.lower(): ('>=', '-110')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_radiodrop'):
+                n_child = ini.cf_sql.get('top_radiodrop', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def top_erabdrop():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'bts_version'.lower(): ('', ''),
-                             'ERAB掉线率'.lower(): ('', ''),
-                             'ERAB掉线率分母'.lower(): ('', ''),
-                             'ERAB掉线次数'.lower(): ('!=', '0'),
-                             '切换失败次数QQ'.lower(): ('!=', '0'),
-                             '切换请求次数QQ'.lower(): ('', ''),
-                             '切换请求次数ZB'.lower(): ('', ''),
-                             'PUSCH_RIP'.lower(): ('>=', '-110')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_erabdrop'):
+                n_child = ini.cf_sql.get('top_erabdrop', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def sleepingcell():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             '休眠时段数'.lower(): ('', ''),
-                             'DRX激活子帧数'.lower(): ('', ''),
-                             'DRX睡眠子帧数'.lower(): ('', '')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('sleepingcell'):
+                n_child = ini.cf_sql.get('sleepingcell', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def sleep_cell_16a():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'BTS_VERSION'.lower(): ('', ''),
-                             '休眠时段数'.lower(): ('', ''),
-                             '带宽'.lower(): ('', ''),
-                             '管理员闭锁状态'.lower(): ('', ''),
-                             'EARFCN'.lower(): ('', ''),
-                             'TYPE'.lower(): ('', ''),
-                             '可用率'.lower(): ('', ''),
-                             'RRC连接数'.lower(): ('', ''),
-                             '最大RRC连接数'.lower(): ('', ''),
-                             'RRC连接建立成功次数'.lower(): ('', ''),
-                             'SRB1建立尝试次数'.lower(): ('', ''),
-                             'SRB1建立成功次数'.lower(): ('', ''),
-                             'SRB1建立失败次数'.lower(): ('', ''),
-                             'DRX激活子帧数'.lower(): ('', ''),
-                             'DRX睡眠子帧数'.lower(): ('', ''),
-                             '昨天总流量MB'.lower(): ('', ''),
-                             }
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('sleep_cell_16a'):
+                n_child = ini.cf_sql.get('sleep_cell_16a', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def overcrowding():
-            self.kpi_dict = {'enb_cell'.lower(): ('', 'cellname'),
-                             'bts_version'.lower(): ('', ''),
-                             'actDrx'.lower(): ('', ''),
-                             'RRC连接建立成功率'.lower(): ('', ''),
-                             'RRC连接建立请求次数'.lower(): ('', ''),
-                             'RRC连接建立失败次数'.lower(): ('!=', '0'),
-                             '拥塞次数'.lower(): ('>', '0'),
-                             '控制面过负荷拥塞'.lower(): ('>', '0'),
-                             '用户面过负荷拥塞'.lower(): ('>', '0'),
-                             'PUCCH资源不足拥塞'.lower(): ('>', '0'),
-                             '最大RRC受限拥塞'.lower(): ('>', '0'),
-                             'MME过负荷拥塞'.lower(): ('>', '0'),
-                             'RRC最大连接数'.lower(): ('', ''),
-                             '最大激活用户数'.lower(): ('', ''),
-                             '有效RRC连接最大数'.lower(): ('', ''),
-                             'PUSCH_RIP'.lower(): ('>=', '-110')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('overcrowding'):
+                n_child = ini.cf_sql.get('overcrowding', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def alarm():
-            self.kpi_dict = {'lnbtsid'.lower(): ('', ''),
-                             'IP'.lower(): ('', ''),
-                             'NAME'.lower(): ('', ''),
-                             'ALARM_TIME'.lower(): ('', ''),
-                             'CANCEL_TIME'.lower(): ('', ''),
-                             'SUPPLEMENTARY_INFO'.lower(): ('', '')}
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('alarm'):
+                n_child = ini.cf_sql.get('alarm', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         def maxue():
-            self.kpi_dict = {
-                'ENB_CELL'.lower(): ('', 'cellname'),
-                'VERSION'.lower(): ('', ''),
-                '带宽'.lower(): ('', ''),
-                'actDrx'.lower(): ('', ''),
-                '最大激活用户数'.lower(): ('', ''),
-                '门限值'.lower(): ('', ''),
-                '配置最大激活用户数'.lower(): ('', ''),
-                'cqi资源'.lower(): ('', ''),
-                'sr资源'.lower(): ('', ''),
-                'maxNumActUE'.lower(): ('', ''),
-                'maxNumRrc'.lower(): ('', ''),
-                'maxNumRrcEmergency'.lower(): ('', '')
-            }
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('maxue'):
+                n_child = ini.cf_sql.get('maxue', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
+        def top_volte_connect():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_volte_connect'):
+                n_child = ini.cf_sql.get('top_volte_connect', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
+        def top_volte_drop():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_volte_drop'):
+                n_child = ini.cf_sql.get('top_volte_drop', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
+        def top_volte_uldrop():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_volte_uldrop'):
+                n_child = ini.cf_sql.get('top_volte_uldrop', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
+        def top_volte_dldrop():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('top_volte_dldrop'):
+                n_child = ini.cf_sql.get('top_volte_dldrop', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
 
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
@@ -458,6 +461,10 @@ class Db:
                         'sleep_cell_16a': sleep_cell_16a,
                         'overcrowding': overcrowding,
                         'alarm': alarm,
+                        'top_volte_connect': top_volte_connect,
+                        'top_volte_drop': top_volte_drop,
+                        'top_volte_uldrop': top_volte_uldrop,
+                        'top_volte_dldrop': top_volte_dldrop,
                         'maxue': maxue}
 
         datatypelist[datatype]()
@@ -471,14 +478,7 @@ class Db:
         self.headindex = [i[1] for i in self.headlist]
         self.kpirange = {i[1]: i[2] for i in self.headlist}
         self.head_data_index = dict(zip(self.headdata, self.headindex))
-        # self.table = prettytable.PrettyTable(self.headdata)
-        # 在终端上显示
-        # self.table.padding_width = 1
         self.dbdata = self.dateget.fetchall()
-        # for i in self.dbdata:
-        #     self.table.add_row([i[j] for j in self.headindex])
-        # ini.displaytext = ini.displaytext + str(self.table) + '\n\n'
-        # print(ini.displaytext)
 
 
 class Email:
@@ -491,7 +491,7 @@ class Email:
             print('>>> 登录email成功。')
         except:
             print('>>> email登录失败，请检查！')
-            sys.exit()
+            # sys.exit()
 
     def emailtext(self, text):
         self.maintext = text
@@ -679,6 +679,43 @@ class Report:
             html.body('h3', '    ◎  esrvcc成功率')
             html.table()
             self.topcelln += 1
+
+        # QCI低接通小区
+        db.getdata(
+            ini.top_volte_sql, timetype='top', counter='volte低接通小区数', top_n='100')
+        db.displaydata(datatype='top_volte_connect')
+        if len(db.dbdata) != 0:
+            html.body('h3', '    ◎ volte低接通小区')
+            html.table()
+            self.topcelln += 1
+
+        # QCI高掉话小区
+        db.getdata(
+            ini.top_volte_sql, timetype='top', counter='volte高掉话小区数', top_n='100')
+        db.displaydata(datatype='top_volte_drop')
+        if len(db.dbdata) != 0:
+            html.body('h3', '    ◎ volte高掉话小区')
+            html.table()
+            self.topcelln += 1
+
+        # QCI上行高丢包小区
+        db.getdata(
+            ini.top_volte_sql, timetype='top', counter='volte上行高丢包小区数', top_n='100')
+        db.displaydata(datatype='top_volte_uldrop')
+        if len(db.dbdata) != 0:
+            html.body('h3', '    ◎ volte上行高丢包小区')
+            html.table()
+            self.topcelln += 1
+
+        # QCI下行高丢包小区
+        db.getdata(
+            ini.top_volte_sql, timetype='top', counter='volte下行高丢包小区数', top_n='100')
+        db.displaydata(datatype='top_volte_dldrop')
+        if len(db.dbdata) != 0:
+            html.body('h3', '    ◎ volte下行高丢包小区')
+            html.table()
+            self.topcelln += 1
+
         # qci1_erab建立成功率
         db.getdata(
             ini.top_volte_sql, timetype='top', counter='qci1_erab建立失败次数')
