@@ -6,7 +6,47 @@ import sys
 import smtplib
 from email.mime.text import MIMEText
 import datetime
+import xlrd
 
+##############################################################################
+print("""
+--------------------------------
+    Welcome to use tools!
+    Author : lin_xu_teng
+    E_mail : lxuteng@live.cn
+--------------------------------
+""")
+print('\n')
+exe_time = int(time.strftime('%Y%m%d', time.localtime(time.time())))
+if exe_time > 20190101:
+    print('\n')
+    print('-' * 64)
+    print('试用版本已过期，请联系作者！')
+    print('-' * 64)
+    print('\n')
+    input()
+    sys.exit()
+
+print('''
+
+update log:
+
+2017-10-7 修复当基站数超过1400个时在线获取log数据失败的bug
+2017-10-7 新增并发数控制，可以自定义并发在线获取基站数目
+2017-10-19 新增ip基础信息，可以在处理结果中匹配对应IP的基站信息；
+
+
+''')
+
+print('\n')
+print('-' * 36)
+print('      >>>   starting   <<<')
+print('-' * 36)
+print('\n\n')
+time.sleep(1)
+
+
+###############################################################################
 
 class Main:
     def __init__(self):
@@ -45,6 +85,13 @@ class Main:
                 self.config['concurrent'] = ['100']
         except:
             self.config['concurrent'] = ['10']
+
+    def get_ip_info(self):
+        self.ip_info_list = {}
+        workbook = xlrd.open_workbook(''.join((self.main_path, '\\', 'Ip_Info.xlsx')))
+        table = workbook.sheet_by_index(0)
+        for i in range(table.nrows):
+            self.ip_info_list[table.row_values(i)[0]] = list(map(str, table.row_values(i)[1:]))
 
     def get_files(self):
         print('>>> 获取本地数据...')
@@ -110,7 +157,13 @@ class Main:
             except:
                 pass
         self.progress(self.file_n, progress_n, 'parse finish!\n')
-        print('>>> 解码完成，开始生成数据...')
+        print('>>> 解码完成，开始获取IP基础信息...')
+        # 获取IP信息
+        try:
+            self.get_ip_info()
+            print('>>> IP基础信息获取完成，开始生成结果报表...')
+        except:
+            print('>>> 未获取到IP基础信息，开始生成结果报表...')
         self.now_time = datetime.datetime.now().strftime('%Y%m%d%H%M')
         self.write()
         print('-' * 32)
@@ -184,18 +237,30 @@ class Main:
                                         self.now_time,
                                         '.csv'
                                         ))), 'w') as f:
-            f.write(','.join(self.head_list_head + self.head_list))
+            if len(self.ip_info_list) == 0:
+                f.write(','.join(self.head_list_head + self.head_list))
+            else:
+                f.write(','.join(self.head_list_head + self.ip_info_list['IP'] + self.head_list))
             f.write('\n')
             for temp_file_name in self.data:
                 for temp_time in self.data[temp_file_name]:
                     f.write(temp_file_name)
                     f.write(',')
-                    f.write(temp_file_name.split('_')[0])
+                    temp_ip = temp_file_name.split('_')[0]
+                    f.write(temp_ip)
                     f.write(',')
                     # temp_time_format = '_'.join((temp_time[0:8], temp_time[8:10], temp_time[10:12], temp_time[12:]))
                     # f.write(temp_time_format)
                     f.write(temp_time)
                     f.write(',')
+                    if len(self.ip_info_list) == 0:
+                        pass
+                    else:
+                        try:
+                            f.write(','.join(self.ip_info_list[temp_ip]))
+                            f.write(',')
+                        except:
+                            f.write('-,-,-,-,')
                     for temp_item in self.head_list:
                         if self.data[temp_file_name][temp_time][temp_item] is None:
                             f.write('-')
@@ -212,7 +277,7 @@ class Main:
                 temp_ip = temp_file_name.split('_')[0]
                 if temp_dacword >= int(self.config['dacword'][0]):
                     if temp_file_name.split('_')[0] not in self.dacword_error_list:
-                        self.dacword_error_list[temp_ip] = {temp_time:temp_dacword}
+                        self.dacword_error_list[temp_ip] = {temp_time: temp_dacword}
                     else:
                         self.dacword_error_list[temp_ip][temp_time] = temp_dacword
 
@@ -258,18 +323,24 @@ class Main:
         # 表格开头设置
         self.MIMEtext += '''
         <table border = '1' cellspacing="0">
-        <thead align = 'center' style = "background:#F2F2F2">
+        <thead align = 'center' style = "background:#F2F2F2"><tr>
         '''
         # 表头
         self.MIMEtext += '''
-        <tr><td><b>IP</b></td>
+        <td><b>IP</b></td>
         <td><b>TIME</b></td>
         <td><b>dacWord</b></td>
-        </thead>
         '''
+        if len(self.ip_info_list) == 0:
+            pass
+        else:
+            for temp_ip_value_head in self.ip_info_list['IP']:
+                self.MIMEtext += '<td><b>'
+                self.MIMEtext += temp_ip_value_head
+                self.MIMEtext += '</b></td>'
         # 表内容（表头设置）
         self.MIMEtext += '''
-        <tbody align = 'center'>
+        </thead><tbody align = 'center'>
         '''
         for temp_ip in self.dacword_error_list:
             for temp_time in self.dacword_error_list[temp_ip]:
@@ -283,6 +354,16 @@ class Main:
                 self.MIMEtext += '<td>'
                 self.MIMEtext += str(self.dacword_error_list[temp_ip][temp_time])
                 self.MIMEtext += '</td>'
+                if len(self.ip_info_list) == 0:
+                    pass
+                else:
+                    try:
+                        for temp_ip_value in self.ip_info_list[temp_ip]:
+                            self.MIMEtext += '<td>'
+                            self.MIMEtext += temp_ip_value
+                            self.MIMEtext += '</td>'
+                    except:
+                        self.MIMEtext += '<td>-</td><td>-</td><td>-</td><td>-</td>'
                 self.MIMEtext += '</tr>'
         self.MIMEtext += '</tbody></table></body></html>'
         with open(os.path.join(self.main_path,
