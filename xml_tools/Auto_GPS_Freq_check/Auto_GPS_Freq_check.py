@@ -16,6 +16,8 @@ class Main:
         # 初始化公共变量
         self.data = {}
         self.head_list = []
+        # 闭锁小区限制个数
+        self.block_num = 5
 
     # 进度条
     @staticmethod
@@ -83,7 +85,8 @@ class Main:
                 print('>>> 开始连接基站，获取log...')
                 os.chdir(self.config['cli_path'][0])
                 cmd_text = ''.join((
-                    'collectfiles.bat  -pw Nemuadmin:nemuuser -attempts 1 -connectout 10 -freqhistory -ipfile ',
+                    'collectfiles.bat  -pw Nemuadmin:nemuuser -attempts 1 -connectout 10 -timeout 10 -freqhistory '
+                    '-ipfile ',
                     self.main_path,
                     '/TEMP/temp_addresses.txt -outdir ',
                     self.main_path,
@@ -125,9 +128,13 @@ class Main:
                 print('>>> 存在GPS异常基站,请尽快处理！')
 
                 # 闭锁基站
-                if self.config['auto_locked'] == ['1']:
-                    print('>>> 开始紧急闭锁基站...')
-                    self.enable_lock()
+                if self.config['auto_locked'] == ['block']:
+                    if len(self.dacword_error_list) > self.block_num:
+                        print('>>> 异常基站个数超过限制个数，不启动紧急闭锁基站，请检查是否设置异常或手动闭锁基站...')
+                    else:
+                        print('>>> 开始紧急闭锁基站...')
+                        self.enable_lock()
+                        print('>>> 紧急闭锁基站完成！')
 
                 # 生成 html 文件
                 self.html()
@@ -210,7 +217,17 @@ class Main:
                         self.dacword_error_list[temp_ip][temp_time] = temp_dacword
 
     def enable_lock(self):
-        pass
+        os.chdir(self.config['cli_path'][0])
+        for temp_ip in self.dacword_error_list:
+            cmd_text = ''.join((
+                'blockcell.bat  -pw Nemuadmin:nemuuser -attempts 1 -connectout 10 -timeout 10 -all '
+                '-ne ',
+                temp_ip,
+                ' -outdir ',
+                self.main_path,
+                '/TEMP'
+            ))
+            os.system(cmd_text)
 
     def html(self):
         # html 头部
@@ -225,9 +242,19 @@ class Main:
             </head>
             <body>'''
         # html开头文字
-        self.MIMEtext += '''
-        <h1><pre>HI，all! 以下基站检测到GPS异常，请尽快处理！</pre></h1>
-        '''
+        if self.config['auto_locked'] == ['block']:
+            if len(self.dacword_error_list) > self.block_num:
+                self.MIMEtext += '''
+                <h1><pre>HI，all! 以下基站检测到GPS异常，因异常基站个数超过限制个数，不启动紧急闭锁基站，请检查是否设置异常或手动闭锁基站...！</pre></h1>
+                '''
+            else:
+                self.MIMEtext += '''
+                <h1><pre>HI，all! 以下基站检测到GPS异常，已尝试将小区闭锁，请尽快检查处理！</pre></h1>
+                '''
+        else:
+            self.MIMEtext += '''
+            <h1><pre>HI，all! 以下基站检测到GPS异常，请尽快处理！</pre></h1>
+            '''
         # 表格开头设置
         self.MIMEtext += '''
         <table border = '1' cellspacing="0">
@@ -277,7 +304,10 @@ class Main:
         # 邮件正文
         self.message = MIMEText(self.MIMEtext, 'html', 'utf-8')
         # 邮件标题
-        self.message['Subject'] = self.config['subject'][0] + self.now_time
+        if self.config['auto_locked'] == ['block'] and len(self.dacword_error_list) <= self.block_num:
+            self.message['Subject'] = '【闭锁】' + self.config['subject'][0] + self.now_time
+        else:
+            self.message['Subject'] = '【未闭锁】' + self.config['subject'][0] + self.now_time
         # 邮件发送邮箱
         self.message['From'] = self.config['mail_user'][0]
         # 邮件收件人
