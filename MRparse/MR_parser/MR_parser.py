@@ -58,6 +58,7 @@ def copy_right():
     2017-7-23 mro_main表中增加移动定义的同频重叠覆盖率；
     2017-8-8 新增运行LOG；
     2017-9-5 新增MRO解码AOA表；
+    2017-10-23 修复解码MRO时部分小区部分时段缺失bug；
 
     ''')
     logging.info(u'-' * 36)
@@ -600,38 +601,42 @@ class Main:
                 try:
                     tar_f = tarfile.open(file_name)
                     for temp_file in tar_f.getnames():
-                        temp_file_tar_f = tar_f.extractfile(temp_file)
-                        temp_file_suffix = temp_file.split('.')[-1].lower()
-                        if temp_file_suffix == 'gz':
-                            if self.config_filter['active_filter'] != ['1']:
-                                tree = ET.parse(gzip.open(temp_file_tar_f))
-                                self.parser(tree, mr_type, queue, ishead)
-                                log_file_child_num += 1
-                                log_file_child_list.append(temp_file)
-                            else:
-                                if self.filter(temp_file, 'tar_gz') == 1:
+                        try:
+                            temp_file_tar_f = tar_f.extractfile(temp_file)
+                            temp_file_suffix = temp_file.split('.')[-1].lower()
+                            if temp_file_suffix == 'gz':
+                                if self.config_filter['active_filter'] != ['1']:
                                     tree = ET.parse(gzip.open(temp_file_tar_f))
                                     self.parser(tree, mr_type, queue, ishead)
-                                    tar_f.extract(temp_file, self.config_main['target_path'][0])
                                     log_file_child_num += 1
                                     log_file_child_list.append(temp_file)
+                                else:
+                                    if self.filter(temp_file, 'tar_gz') == 1:
+                                        tree = ET.parse(gzip.open(temp_file_tar_f))
+                                        self.parser(tree, mr_type, queue, ishead)
+                                        tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                        log_file_child_num += 1
+                                        log_file_child_list.append(temp_file)
 
-                        elif temp_file_suffix == 'xml':
-                            if self.config_filter['active_filter'] != ['1']:
-                                tree = ET.parse(temp_file_tar_f)
-                                self.parser(tree, mr_type, queue, ishead)
-                                log_file_child_num += 1
-                                log_file_child_list.append(temp_file)
-                            else:
-                                if self.filter(temp_file, 'tar_gz') == 1:
+                            elif temp_file_suffix == 'xml':
+                                if self.config_filter['active_filter'] != ['1']:
                                     tree = ET.parse(temp_file_tar_f)
                                     self.parser(tree, mr_type, queue, ishead)
-                                    tar_f.extract(temp_file, self.config_main['target_path'][0])
                                     log_file_child_num += 1
                                     log_file_child_list.append(temp_file)
+                                else:
+                                    if self.filter(temp_file, 'tar_gz') == 1:
+                                        tree = ET.parse(temp_file_tar_f)
+                                        self.parser(tree, mr_type, queue, ishead)
+                                        tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                        log_file_child_num += 1
+                                        log_file_child_list.append(temp_file)
+                        except:
+                            traceback.print_exc()
 
                     tar_f.close()
                 except:
+                    traceback.print_exc()
                     gzip_file = gzip.open(file_name)
                     if self.config_filter['active_filter'] != ['1']:
                         tree = ET.parse(gzip_file)
