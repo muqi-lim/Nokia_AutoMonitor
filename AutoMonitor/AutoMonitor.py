@@ -25,7 +25,7 @@ print("""
 """)
 print('\n')
 exetime = int(time.strftime('%Y%m%d', time.localtime(time.time())))
-if exetime > 20180101:
+if exetime > 20190101:
     print('\n')
     print('-' * 64)
     print('试用版本已过期，请联系作者！')
@@ -48,6 +48,7 @@ update log:
 2017-9-24 兼容TL16A版本基站通报及监控；添加2017年下半年考核指标通报；
 2017-10-16 新增零流量小区通报；
 2017-10-18 优化程序config结构；
+2017-11-1 raw_monitor报表中新增esrvcc切换准备失败监控报表；
 
 
 ''')
@@ -81,6 +82,7 @@ class Getini:
         self.subject_sleep_0 = 0
         self.subject_gps = 0
         self.subject_maxue = 0
+        self.subject_srvcc = 0
         for h in self.cf.options('main'):
             self.main[h] = self.cf.get('main', h)
 
@@ -465,7 +467,8 @@ class Db:
                         'top_volte_drop': top_volte_drop,
                         'top_volte_uldrop': top_volte_uldrop,
                         'top_volte_dldrop': top_volte_dldrop,
-                        'maxue': maxue}
+                        'maxue': maxue
+                        }
 
         datatypelist[datatype]()
         self.headlist = [
@@ -511,6 +514,8 @@ class Email:
                 temp_subject += '【干扰】'
             if ini.subject_maxue == 1:
                 temp_subject += '【maxue】'
+            if ini.subject_srvcc == 1:
+                temp_subject += '【eSRVCC】'
         self.message['Subject'] = temp_subject + ini.subject
         self.message['From'] = ini.email['mail_user']
         if len(ini.email['receivers']) > 1:
@@ -853,6 +858,16 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_maxue = 1
+
+        # esrvcc切换差小区
+        db.getdata(
+            ini.top_kpi_sql, timetype='top', counter='esrvcc切换失败次数ZB', threshold=20)
+        db.displaydata(datatype='top_srvcc')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  esrvcc切换失败次数ZB')
+            html.table()
+            self.topcelln += 1
+            ini.subject_srvcc = 1
 
         # html结束
         html.foot()
