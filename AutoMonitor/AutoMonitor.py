@@ -49,6 +49,9 @@ update log:
 2017-10-16 新增零流量小区通报；
 2017-10-18 优化程序config结构；
 2017-11-1 raw_monitor报表中新增esrvcc切换准备失败监控报表；
+2017-11-2 raw_monitor报表中新增VoLTE低接通小区监控报表；
+2017-11-3 raw_monitor新增srvcc差小区、Volte低接通小区自动关闭测量功能；
+2017-11-6 修复自动关闭测量功能log时间不准确问题；
 
 
 ''')
@@ -83,6 +86,7 @@ class Getini:
         self.subject_gps = 0
         self.subject_maxue = 0
         self.subject_srvcc = 0
+        self.subject_lowconnect = 0
         for h in self.cf.options('main'):
             self.main[h] = self.cf.get('main', h)
 
@@ -100,7 +104,6 @@ class Getini:
                 self.email[o] = o_child
 
         self.config = {}
-        self.autodisabledpmmeasurementdata = ''
         for i in self.cf.options('config'):
             self.config[i] = self.cf.get('config', i)
 
@@ -170,11 +173,12 @@ class Getini:
             self.mainvosql = 'main_vokpi_raw'
             self.top_volte_sql = 'top_volte_raw'
             self.top_kpi_sql = 'top_kpi_raw'
-            self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H%M')
+            self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
             self.sleepingcell_sql = 'sleepingcell_raw'
             self.sleep_cell_16a_raw = 'sleep_cell_16a_raw'
             self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.maxue = 'maxue_raw'
+            self.cell_raw_all_lowconnect = 'cell_raw_all_lowconnect'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
@@ -504,6 +508,10 @@ class Email:
         self.message = MIMEText(self.maintext, 'html', 'utf-8')
         temp_subject = db.ip + '-'
         if ini.config['timetype'] == 'raw_monitor':
+            if ini.subject_srvcc == 1:
+                temp_subject += '【eSRVCC】'
+            if ini.subject_lowconnect == 1:
+                temp_subject += '【VOLTE低接通】'
             if ini.subject_overcrowding == 1:
                 temp_subject += '【拥塞】'
             if ini.subject_sleep == 1:
@@ -514,8 +522,6 @@ class Email:
                 temp_subject += '【干扰】'
             if ini.subject_maxue == 1:
                 temp_subject += '【maxue】'
-            if ini.subject_srvcc == 1:
-                temp_subject += '【eSRVCC】'
         self.message['Subject'] = temp_subject + ini.subject
         self.message['From'] = ini.email['mail_user']
         if len(ini.email['receivers']) > 1:
@@ -809,6 +815,43 @@ class Report:
     def raw_monitor(self, type):
         html.head()
         html.body('h1', 'HI，最近15分钟存在KPI恶化明显小区，可能对整网指标影响较大，请尽快处理！')
+        # esrvcc切换差小区
+        db.getdata(
+            ini.top_kpi_sql, timetype='top', counter='esrvcc切换失败次数ZB', threshold=15)
+        db.displaydata(datatype='top_srvcc')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  esrvcc切换失败次数ZB')
+
+            # 保留TOP小区信息
+            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_srvcc'] == '1':
+                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                dis_pm.autodisabledpmmeasurementdata['top_srvcc'] = [temp_i[2] for temp_i in db.dbdata]
+                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区esrvcc切换失败较多,'
+                                '已尝试将esrvcc切换开关（actSrvccToGsm）关闭!!!</b></font>')
+                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+            html.table()
+            self.topcelln += 1
+            ini.subject_srvcc = 1
+        # volte低接通小区
+        db.getdata(
+            ini.cell_raw_all_lowconnect, timetype='top', counter='qci1无线接通率')
+        db.displaydata(datatype='top_volte_connect')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  qci1无线接通率')
+
+            # 保留TOP小区信息
+            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_volte_connect'] == '1':
+                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                dis_pm.autodisabledpmmeasurementdata['top_volte_connect'] = [temp_i[2] for temp_i in db.dbdata]
+                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte低接通小区,'
+                                '已尝试将测量开关（mtEPSBearer）关闭!!!</b></font>')
+                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+            html.table()
+            self.topcelln += 1
+            ini.subject_lowconnect = 1
+
         # GPS故障小区
         db.getdata(ini.alarm_sql)
         db.displaydata(datatype='alarm')
@@ -841,8 +884,9 @@ class Report:
             html.body('h2', '   ◎  高拥塞小区')
 
             # 保留高拥塞小区信息
-            if ini.config['autodisabledpmmeasurement'] == '1':
-                ini.autodisabledpmmeasurementdata = [temp_i[2] for temp_i in db.dbdata]
+            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_overcrowding'] == '1':
+                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                dis_pm.autodisabledpmmeasurementdata['overcrowding'] = [temp_i[2] for temp_i in db.dbdata]
                 html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区因拥塞对现网指标影响较大，'
                                 '已尝试将RRC测量上报开关关闭!!!</b></font>')
                 html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
@@ -858,16 +902,6 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_maxue = 1
-
-        # esrvcc切换差小区
-        db.getdata(
-            ini.top_kpi_sql, timetype='top', counter='esrvcc切换失败次数ZB', threshold=20)
-        db.displaydata(datatype='top_srvcc')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  esrvcc切换失败次数ZB')
-            html.table()
-            self.topcelln += 1
-            ini.subject_srvcc = 1
 
         # html结束
         html.foot()
@@ -889,10 +923,132 @@ class Report:
             print('>>> 该时段未存在恶化小区！')
 
 
+class Autodisablepm:
+    def __init__(self):
+        # 初始化，并指定标识，以确定字典里面是否有数据
+        self.autodisabledpmmeasurementdata = {
+            'mark': 0,
+            'overcrowding': [],
+            'top_srvcc': [],
+            'top_volte_connect': [],
+        }
+
+    def format_enbid_ip(self):
+        # 获取高拥塞小区，并转化成 {enbid：ip} 格式
+        self.disabledpmmeasurement_list = {
+            'mark': 0,
+            'overcrowding': {},
+            'top_srvcc': {},
+            'top_volte_connect': {},
+        }
+        for temp_table in self.autodisabledpmmeasurementdata:
+            if temp_table != 'mark':
+                for temp_enbid in self.autodisabledpmmeasurementdata[temp_table]:
+
+                    if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
+                        self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
+                            temp_enbid][1]
+                        self.disabledpmmeasurement_list['mark'] = 1
+
+                    try:
+                        if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
+                            self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
+                                temp_enbid][1]
+                            self.disabledpmmeasurement_list['mark'] = 1
+                    except:
+                        print(''.join(('>>> 基础数据 cellinfo 中未存在ENBID:', temp_enbid[:6], ' ,请检查完善！')))
+        # 如果所有小区都没有读取到ip，则退出
+        if self.disabledpmmeasurement_list['mark'] == 0:
+            return 0
+        else:
+            return 1
+
+    def creat_bat(self):
+        # 生成BAT文件
+        bat_file_list = {
+            'overcrowding': 'disabled_mtUEstate.xml',
+            'top_srvcc': 'disabled_actSrvccToGsm.xml',
+            'top_volte_connect': 'disabled_mtEPSBearer.xml',
+        }
+        self.bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
+        with open(self.bat_path,'w') as f_dm:
+            for temp_table in self.disabledpmmeasurement_list:
+                if temp_table != 'mark':
+                    for temp_enbid in self.disabledpmmeasurement_list[temp_table]:
+                        temp_text = ''.join(('call commission.bat -ne ',
+                                            self.disabledpmmeasurement_list[temp_table][temp_enbid],
+                                             ' -pw Nemuadmin:nemuuser -parameterfile ',
+                                             bat_file_list[temp_table],
+                                             ' |tee ./temp/',
+                                             temp_table,
+                                             '-',
+                                             temp_enbid,
+                                             '.log'))
+                        f_dm.write(temp_text)
+                        f_dm.write('\n')
+
+    def run_disable_pm(self):
+        # 修改运行文件夹为批处理文件所在目录，并执行批处理程序；
+        os.chdir(''.join((ini.path, '/CommisionTool')))
+        subprocess.call(self.bat_path)
+
+    def creat_log(self):
+        # 读取批处理程序运行结果，并生成csv记录表
+        top_name_tran = {
+            'overcrowding': '拥塞',
+            'top_srvcc': 'eSRVCC切换差小区',
+            'top_volte_connect': 'Volte低接通小区',
+        }
+        f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
+        if not os.path.exists(f_csv):
+            f_csv_new = open(f_csv, 'w')
+            f_csv_new.write('日期,时间,类型,enbid,ip,关闭测量情况\n')
+            f_csv_new.close()
+        with open(f_csv, 'a') as f_dml:
+            for temp_table in self.disabledpmmeasurement_list:
+                if temp_table != 'mark':
+                    for temp_enbid in self.disabledpmmeasurement_list[temp_table]:
+                        f_dml.write(time.strftime('%Y/%m/%d', time.strptime(str(ini.htmlname), '%Y%m%d%H%M%S')))
+                        f_dml.write(',')
+                        f_dml.write(time.strftime('%Y/%m/%d %H:%M:%S', time.strptime(str(ini.htmlname),
+                                                                                     '%Y%m%d%H%M%S')))
+                        f_dml.write(',')
+                        f_dml.write(top_name_tran[temp_table])
+                        f_dml.write(',')
+                        f_dml.write(str(temp_enbid))
+                        f_dml.write(',')
+                        f_dml.write(str(self.disabledpmmeasurement_list[temp_table][temp_enbid]))
+                        f_dml.write(',')
+                        try:
+                            with open(''.join((ini.path,
+                                               '/CommisionTool/temp/',
+                                               temp_table,
+                                               '-',
+                                               temp_enbid,
+                                               '.log')), 'r') as f_log:
+                                log_info = f_log.read()
+                                if 'Successfully activated' in log_info:
+                                    f_dml.write('Successfully')
+                                elif ' Connection from 0.0.0.0 exists' in log_info:
+                                    f_dml.write('Connection refused')
+                                elif 'Cannot connect to' in log_info:
+                                    f_dml.write('Connection Failed')
+                                elif 'Commissioning failed' in log_info:
+                                    f_dml.write('Commissioning failed')
+                                else:
+                                    f_dml.write('Other Failed')
+                                f_dml.write('\n')
+                        except:
+                            f_dml.write('\n')
+        print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
+
+
 if __name__ == '__main__':
+    print(''.join((time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))))
     ini = Getini()
     ini.automonitor()
     for db_child in ini.db:
+        dis_pm = Autodisablepm()
         db = Db(ini.db[db_child][0], ini.db[db_child][1], ini.db[db_child][2])
         html = Html()
         db.db_connect()
@@ -914,6 +1070,17 @@ if __name__ == '__main__':
         if ini.config['timetype'] == 'raw_monitor' and db_report.topcelln == 0:
             ini.main['actemail'] = '0'
 
+        # 关闭测量
+        if dis_pm.autodisabledpmmeasurementdata['mark'] == 1:
+            if dis_pm.format_enbid_ip() == 0:
+                print('>>> 未存在需关闭测量小区。')
+                sys.exit()
+            else:
+                print('>>> 开始尝试关闭小区测量...')
+                dis_pm.creat_bat()
+                dis_pm.run_disable_pm()
+                dis_pm.creat_log()
+
         # 发送邮件
         if ini.main['actemail'] == '1':
             email = Email()
@@ -922,57 +1089,4 @@ if __name__ == '__main__':
             email.sendemail()
             email.smtpObj.close()
 
-        # 关闭高拥塞小区测量
-        if ini.autodisabledpmmeasurementdata != '':
-            print('>>> 开始尝试关闭拥塞小区测量...')
-            # 获取高拥塞小区，并转化成 {enbid：ip} 格式
-            disabledpmmeasurement_list = {}
-            for i in ini.autodisabledpmmeasurementdata:
-                try:
-                    if ini.cellinfo_data[i][1].count('.') == 3:
-                        disabledpmmeasurement_list[ini.cellinfo_data[i][0][:6]] = ini.cellinfo_data[i][1]
-                except:
-                    print(''.join(('>>> 基础数据 cellinfo 中未存在ENBID:', i, ' ,请检查完善！')))
-            # 如果所有小区都没有读取到ip，则退出
-            if len(disabledpmmeasurement_list) == 0:
-                sys.exit()
-            # 生成批处理bat文件
-            bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
-            with open(bat_path, 'w') as f_dm:
-                for j in disabledpmmeasurement_list:
-                    temp_text = ''.join(('call commission.bat -ne ',
-                                         disabledpmmeasurement_list[j],
-                                         ' -pw Nemuadmin:nemuuser -parameterfile disabled.xml |tee ./temp/',
-                                         j, '.log'))
-                    f_dm.write(temp_text)
-                    f_dm.write('\n')
-            # 修改运行文件夹为批处理文件所在目录，并执行批处理程序；
-            os.chdir(''.join((ini.path, '/CommisionTool')))
-            subprocess.call(bat_path)
-            # 读取批处理程序运行结果，并生成csv记录表
-            f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
-            if not os.path.exists(f_csv):
-                f_csv_new = open(f_csv, 'w')
-                f_csv_new.write('时间,enbid,ip,关闭测量情况\n')
-                f_csv_new.close()
-            with open(f_csv, 'a') as f_dml:
-                for kk in disabledpmmeasurement_list:
-                    f_dml.write("'")
-                    f_dml.write(str(ini.htmlname))
-                    f_dml.write(',')
-                    f_dml.write(str(kk))
-                    f_dml.write(',')
-                    f_dml.write(str(disabledpmmeasurement_list[kk]))
-                    f_dml.write(',')
-                    with open(''.join((ini.path, '/CommisionTool/temp/', kk, '.log')), 'r') as f_log:
-                        log_info = f_log.read()
-                        if 'Successfully activated' in log_info:
-                            f_dml.write('Successfully Disabeled PM Measurement')
-                        elif ' Connection from 0.0.0.0 exists' in log_info:
-                            f_dml.write('Connection refused')
-                        elif 'Cannot connect to' in log_info:
-                            f_dml.write('Connection Failed')
-                        else:
-                            f_dml.write('Other Failed')
-                        f_dml.write('\n')
-            print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
+    print(''.join((time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))))
