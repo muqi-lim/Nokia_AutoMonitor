@@ -13,6 +13,7 @@ import subprocess
 # 邮件模块
 import smtplib
 from email.mime.text import MIMEText
+from multiprocessing.dummy import Pool as ThreadPool
 
 ##############################################################################
 print("""
@@ -52,6 +53,9 @@ update log:
 2017-11-2 raw_monitor报表中新增VoLTE低接通小区监控报表；
 2017-11-3 raw_monitor新增srvcc差小区、Volte低接通小区自动关闭测量功能；
 2017-11-6 修复自动关闭测量功能log时间不准确问题；
+2017-11-9 raw_monitor新增下行高丢包小区自动关闭测量功能；
+2017-11-9 关闭测量功能时使用多进程并发进行，提高闭锁效率；
+2017-11-9 设置发送邮件时段；
 
 
 ''')
@@ -87,10 +91,16 @@ class Getini:
         self.subject_maxue = 0
         self.subject_srvcc = 0
         self.subject_lowconnect = 0
+        self.subject_dl_low_vo_loss = 0
         for h in self.cf.options('main'):
             self.main[h] = self.cf.get('main', h)
 
         self.actemail = self.main['actemail']
+
+        if datetime.datetime.now().strftime('%H') not in self.main['actemail_time'].split(','):
+            self.main['actemail'] = '0'
+            self.actemail = self.main['actemail']
+
         if self.main['actemail'] == '1':
             self.email = {}
             for o in self.cf.options('email'):
@@ -179,6 +189,7 @@ class Getini:
             self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.maxue = 'maxue_raw'
             self.cell_raw_all_lowconnect = 'cell_raw_all_lowconnect'
+            self.cell_raw_all_dl_low_vo_loss = 'cell_raw_all_dl_low_vo_loss'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
@@ -514,6 +525,8 @@ class Email:
                 temp_subject += '【VOLTE低接通】'
             if ini.subject_overcrowding == 1:
                 temp_subject += '【拥塞】'
+            if ini.subject_dl_low_vo_loss == 1:
+                temp_subject += '【高丢包】'
             if ini.subject_sleep == 1:
                 temp_subject += '【休眠】'
             if ini.subject_sleep_0 == 1:
@@ -817,7 +830,7 @@ class Report:
         html.body('h1', 'HI，最近15分钟存在KPI恶化明显小区，可能对整网指标影响较大，请尽快处理！')
         # esrvcc切换差小区
         db.getdata(
-            ini.top_kpi_sql, timetype='top', counter='esrvcc切换失败次数ZB', threshold=15)
+            ini.top_kpi_sql, timetype='top', counter='esrvcc切换失败次数ZB', threshold='5')
         db.displaydata(datatype='top_srvcc')
         if len(db.dbdata) != 0:
             html.body('h2', '   ◎  esrvcc切换失败次数ZB')
@@ -851,6 +864,25 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_lowconnect = 1
+
+        # QCI1下行丢包率
+        db.getdata(
+            ini.cell_raw_all_dl_low_vo_loss, timetype='top', counter='QCI1下行丢包率')
+        db.displaydata(datatype='top_volte_dldrop')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  QCI1下行丢包率')
+
+            # 保留TOP小区信息
+            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_cell_raw_all_dl_low_vo_loss'] == '1':
+                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                dis_pm.autodisabledpmmeasurementdata['top_volte_dldrop'] = [temp_i[2] for temp_i in db.dbdata]
+                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte高丢包,'
+                                '已尝试将测量开关（mtQoS）关闭!!!</b></font>')
+                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+            html.table()
+            self.topcelln += 1
+            ini.subject_dl_low_vo_loss = 1
 
         # GPS故障小区
         db.getdata(ini.alarm_sql)
@@ -931,6 +963,7 @@ class Autodisablepm:
             'overcrowding': [],
             'top_srvcc': [],
             'top_volte_connect': [],
+            'top_volte_dldrop': [],
         }
 
     def format_enbid_ip(self):
@@ -940,6 +973,7 @@ class Autodisablepm:
             'overcrowding': {},
             'top_srvcc': {},
             'top_volte_connect': {},
+            'top_volte_dldrop': {},
         }
         for temp_table in self.autodisabledpmmeasurementdata:
             if temp_table != 'mark':
@@ -964,14 +998,17 @@ class Autodisablepm:
             return 1
 
     def creat_bat(self):
+        # 生成命令列表
+        self.cmd_list = []
         # 生成BAT文件
         bat_file_list = {
             'overcrowding': 'disabled_mtUEstate.xml',
             'top_srvcc': 'disabled_actSrvccToGsm.xml',
             'top_volte_connect': 'disabled_mtEPSBearer.xml',
+            'top_volte_dldrop': 'disabled_mtQoS.xml',
         }
         self.bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
-        with open(self.bat_path,'w') as f_dm:
+        with open(self.bat_path, 'w') as f_dm:
             for temp_table in self.disabledpmmeasurement_list:
                 if temp_table != 'mark':
                     for temp_enbid in self.disabledpmmeasurement_list[temp_table]:
@@ -984,13 +1021,21 @@ class Autodisablepm:
                                              '-',
                                              temp_enbid,
                                              '.log'))
+                        self.cmd_list.append(temp_text)
                         f_dm.write(temp_text)
                         f_dm.write('\n')
+
+    def run_call(self, ii):
+        return subprocess.call(ii, shell=True)
 
     def run_disable_pm(self):
         # 修改运行文件夹为批处理文件所在目录，并执行批处理程序；
         os.chdir(''.join((ini.path, '/CommisionTool')))
-        subprocess.call(self.bat_path)
+        # subprocess.call(self.bat_path)
+        pool = ThreadPool()
+        pool.map(self.run_call, self.cmd_list)
+        pool.close()
+        pool.join()
 
     def creat_log(self):
         # 读取批处理程序运行结果，并生成csv记录表
@@ -998,6 +1043,7 @@ class Autodisablepm:
             'overcrowding': '拥塞',
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
+            'top_volte_dldrop': 'Volte高丢包',
         }
         f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
@@ -1035,6 +1081,8 @@ class Autodisablepm:
                                     f_dml.write('Connection Failed')
                                 elif 'Commissioning failed' in log_info:
                                     f_dml.write('Commissioning failed')
+                                elif 'Maximum number of connections has exceeded' in log_info:
+                                    f_dml.write('Maximum number of connections has exceeded')
                                 else:
                                     f_dml.write('Other Failed')
                                 f_dml.write('\n')
