@@ -14,6 +14,7 @@ import subprocess
 import smtplib
 from email.mime.text import MIMEText
 from multiprocessing.dummy import Pool as ThreadPool
+import xlrd
 
 ##############################################################################
 print("""
@@ -56,6 +57,7 @@ update log:
 2017-11-9 raw_monitor新增下行高丢包小区自动关闭测量功能；
 2017-11-9 关闭测量功能时使用多进程并发进行，提高闭锁效率；
 2017-11-9 设置发送邮件时段；
+2017-11-13 更换 cellinfo 格式，使其不再受编码方式影响；
 
 
 ''')
@@ -225,16 +227,25 @@ class Getini:
             self.kpi[n.lower()] = n_child
 
     def cellinfo(self):
-        f = open('/'.join((self.path, 'cellinfo.csv')), 'r', encoding='utf-8-sig')
-        k = 0
+        # f = open('/'.join((self.path, 'cellinfo.csv')), 'r', encoding='utf-8-sig')
+        # k = 0
+        # self.cellinfo_data = {}
+        # for i in f.readlines():
+        #     if k == 0:
+        #         self.cellinfo_head = i.split(',')
+        #         k = 1
+        #     else:
+        #         self.cellinfo_data[i.split(',')[0]] = i.split(',')
+        # f.close()
+
+        workbook = xlrd.open_workbook('/'.join((self.path, 'cellinfo.xlsx')))
+        table = workbook.sheet_by_index(0)
         self.cellinfo_data = {}
-        for i in f.readlines():
-            if k == 0:
-                self.cellinfo_head = i.split(',')
-                k = 1
+        for i in range(table.nrows):
+            if i == 0:
+                self.cellinfo_head = table.row_values(i)
             else:
-                self.cellinfo_data[i.split(',')[0]] = i.split(',')
-        f.close()
+                self.cellinfo_data[table.row_values(i)[0]] = table.row_values(i)
 
 
 class Db:
@@ -261,7 +272,8 @@ class Db:
                 timetype='main',
                 counter='default',
                 threshold='0',
-                top_n='11'):
+                top_n='11',
+                codicil=''):
         threshold = str(threshold)
         print(''.join(('>>> 开始获取数据 ', ini.SQL_name[sqlname][0], ' ...')))
         sqlfullname = ''.join(
@@ -280,6 +292,9 @@ class Db:
             # top小区counter自定义
             if counter != 'default':
                 sqltext = sqltext.replace('&3', counter)
+            # 附加条件，指标查询细化
+            if codicil != '':
+                sqltext = sqltext.replace('--&6', codicil)
         except:
             print('>>>  ', sqlfullname, ' 时段设置异常，请检查！')
         # 设置top小区门限值
@@ -588,7 +603,7 @@ class Html:
             self.MIMEtext += '<tr>'
             for k in db.headindex:
                 self.MIMEtext += '<td>'
-                if range(j[k], db.kpirange[k]):
+                if r_range(j[k], db.kpirange[k]):
                     self.MIMEtext += '<font color="#ff0000"><b>'
                 if str(j[k]).count('.') == 1:
                     # self.MIMEtext += str(round(float(j[k]), 3))
@@ -598,7 +613,7 @@ class Html:
                         self.MIMEtext += str(j[k])
                 else:
                     self.MIMEtext += str(j[k])
-                if range(j[k], db.kpirange[k]):
+                if r_range(j[k], db.kpirange[k]):
                     self.MIMEtext += '</b></font>'
                 self.MIMEtext += '</td>'
                 # 添加中文小区名和ip
@@ -623,7 +638,7 @@ class Html:
         self.MIMEtext += '</body></html>'
 
 
-def range(value, list):
+def r_range(value, list):
     try:
         if list[0] == '>':
             return float(value) > float(list[1])
@@ -830,7 +845,11 @@ class Report:
         html.body('h1', 'HI，最近15分钟存在KPI恶化明显小区，可能对整网指标影响较大，请尽快处理！')
         # esrvcc切换差小区
         db.getdata(
-            ini.top_kpi_sql, timetype='top', counter='esrvcc切换失败次数ZB', threshold='5')
+            ini.top_kpi_sql,
+            timetype='top',
+            counter='esrvcc切换失败次数ZB',
+            threshold='4',
+        )
         db.displaydata(datatype='top_srvcc')
         if len(db.dbdata) != 0:
             html.body('h2', '   ◎  esrvcc切换失败次数ZB')
@@ -1083,6 +1102,8 @@ class Autodisablepm:
                                     f_dml.write('Commissioning failed')
                                 elif 'Maximum number of connections has exceeded' in log_info:
                                     f_dml.write('Maximum number of connections has exceeded')
+                                elif 'Failed to get HW data' in log_info:
+                                    f_dml.write('Failed to get HW data')
                                 else:
                                     f_dml.write('Other Failed')
                                 f_dml.write('\n')
