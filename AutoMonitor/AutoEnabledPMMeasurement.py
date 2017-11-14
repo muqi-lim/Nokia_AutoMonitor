@@ -74,7 +74,7 @@ class Main:
         f_csv = csv.reader(f)
         with open(self.bat_path, 'w') as f_em:
             for temp_log in f_csv:
-                if [temp_log[0], temp_log[-1]] == [self.yesterday, 'Successfully']:
+                if [temp_log[0], temp_log[5]] == [self.yesterday, 'Successfully']:
                     temp_text = ''.join(('call commission.bat -ne ',
                                         temp_log[4],
                                          ' -pw Nemuadmin:nemuuser -parameterfile ',

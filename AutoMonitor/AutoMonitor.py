@@ -58,6 +58,7 @@ update log:
 2017-11-9 关闭测量功能时使用多进程并发进行，提高闭锁效率；
 2017-11-9 设置发送邮件时段；
 2017-11-13 更换 cellinfo 格式，使其不再受编码方式影响；
+2017-11-14 关闭测量log增加关闭测量开始时间及结束时间；
 
 
 ''')
@@ -1067,7 +1068,7 @@ class Autodisablepm:
         f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
             f_csv_new = open(f_csv, 'w')
-            f_csv_new.write('日期,时间,类型,enbid,ip,关闭测量情况\n')
+            f_csv_new.write('日期,时间,类型,enbid,ip,关闭测量情况,关闭测量开始时间,关闭测量结束时间\n')
             f_csv_new.close()
         with open(f_csv, 'a') as f_dml:
             for temp_table in self.disabledpmmeasurement_list:
@@ -1106,7 +1107,21 @@ class Autodisablepm:
                                     f_dml.write('Failed to get HW data')
                                 else:
                                     f_dml.write('Other Failed')
-                                f_dml.write('\n')
+                                f_dml.write(',')
+                            # 获取开始结束时间
+                            with open(''.join((ini.path,
+                                               '/CommisionTool/temp/',
+                                               temp_table,
+                                               '-',
+                                               temp_enbid,
+                                               '.log')), 'r') as f_log:
+                                for temp_line in f_log.readlines():
+                                    if 'Connecting to' in temp_line:
+                                        f_dml.write(temp_line[:14])
+                                        f_dml.write(',')
+                                    if 'Operations finished successfully' in temp_line:
+                                        f_dml.write(temp_line[:14])
+                                        f_dml.write('\n')
                         except:
                             f_dml.write('\n')
         print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
