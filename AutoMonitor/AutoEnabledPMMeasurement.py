@@ -123,7 +123,7 @@ class Main:
         f_csv = ''.join((self.main_path, '/HTML_TEMP/EnabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
             f_csv_new = open(f_csv, 'w')
-            f_csv_new.write('日期,激活测量时间,类型,enbid,ip,关闭测量情况\n')
+            f_csv_new.write('日期,激活测量时间,类型,enbid,ip,激活测量情况\n')
             f_csv_new.close()
         with open(f_csv, 'a') as f_dml:
             for temp_table in self.enabledpmmeasurement_list:
@@ -160,7 +160,7 @@ class Main:
                                 f_dml.write('Failed to get HW data')
                             else:
                                 f_dml.write('Other Failed')
-                            f_dml.write('\n')
+                        f_dml.write('\n')
                     except:
                         f_dml.write('\n')
         print('>>> 完成！请到 /HTML_TEMP/EnabeledPMMeasurementEnbList.csv 检查运行结果.')

@@ -15,6 +15,7 @@ import smtplib
 from email.mime.text import MIMEText
 from multiprocessing.dummy import Pool as ThreadPool
 import xlrd
+import openpyxl
 
 ##############################################################################
 print("""
@@ -59,6 +60,8 @@ update log:
 2017-11-9 设置发送邮件时段；
 2017-11-13 更换 cellinfo 格式，使其不再受编码方式影响；
 2017-11-14 关闭测量log增加关闭测量开始时间及结束时间；
+2017-11-14 hour表volte低接通根据当天累计进行统计；
+2017-11-16 volte低接通小区、srvcc切换差小区的kpi详情记录到log；
 
 
 ''')
@@ -167,6 +170,7 @@ class Getini:
             self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H')
             self.maxue = 'maxue_hour'
+            self.cell_hour_all_lowconnect = 'cell_hour_all_lowconnect'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H')
@@ -258,7 +262,7 @@ class Db:
     # 连接数据库
 
     def db_connect(self):
-        print('>>> loading:', self.ip, '...\n')
+        print('>>> loading:', self.ip, '...')
         try:
             conn = cx_Oracle.connect(self.user, self.pwd, self.ip)
             self.cc = conn.cursor()
@@ -638,6 +642,50 @@ class Html:
     def foot(self):
         self.MIMEtext += '</body></html>'
 
+    def write_top_cell(self, type_name):
+        top_cell_list_path = os.path.join(ini.path, 'HTML_TEMP/Top_Cell_List.xlsx')
+        if not os.path.exists(top_cell_list_path):
+            workbook = openpyxl.Workbook()
+            worksheet = workbook.create_sheet(type_name)
+            row_head_value_list = []
+            for i in db.headdata:
+                row_head_value_list.append(i)
+                # 添加中文小区名和ip
+                if db.kpirange[db.head_data_index[i]][1] == 'cellname':
+                    row_head_value_list.append('cellname')
+                    row_head_value_list.append('ip')
+            worksheet.append(row_head_value_list)
+            workbook.save(top_cell_list_path)
+        workbook = openpyxl.load_workbook(top_cell_list_path)
+        if type_name not in workbook.sheetnames:
+            worksheet = workbook.create_sheet(type_name)
+            row_head_value_list = []
+            for i in db.headdata:
+                row_head_value_list.append(i)
+                # 添加中文小区名和ip
+                if db.kpirange[db.head_data_index[i]][1] == 'cellname':
+                    row_head_value_list.append('cellname')
+                    row_head_value_list.append('ip')
+            worksheet.append(row_head_value_list)
+        else:
+            worksheet = workbook[type_name]
+        row_value_list = []
+        for j in db.dbdata:
+            for k in db.headindex:
+                row_value_list.append(j[k])
+                if db.kpirange[k][1] == 'cellname':
+                    try:
+                        row_value_list.append(ini.cellinfo_data[j[k]][2])
+                    except:
+                        row_value_list.append('-')
+                    try:
+                        row_value_list.append(ini.cellinfo_data[j[k]][1])
+                    except:
+                        row_value_list.append('-')
+            worksheet.append(row_value_list)
+            row_value_list = []
+        workbook.save(top_cell_list_path)
+
 
 def r_range(value, list):
     try:
@@ -721,11 +769,18 @@ class Report:
             self.topcelln += 1
 
         # QCI低接通小区
-        db.getdata(
-            ini.top_volte_sql, timetype='top', counter='volte低接通小区数', top_n='100')
+        if ini.config['timetype'] == 'hour':
+            db.getdata(
+                ini.cell_hour_all_lowconnect, timetype='top', counter='volte低接通小区数', top_n='100')
+        else:
+            db.getdata(
+                ini.top_volte_sql, timetype='top', counter='volte低接通小区数', top_n='100')
         db.displaydata(datatype='top_volte_connect')
         if len(db.dbdata) != 0:
-            html.body('h3', '    ◎ volte低接通小区')
+            if ini.config['timetype'] == 'hour':
+                html.body('h3', '    ◎ volte低接通小区(当天累计)')
+            else:
+                html.body('h3', '    ◎ volte低接通小区')
             html.table()
             self.topcelln += 1
 
@@ -866,6 +921,11 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_srvcc = 1
+            try:
+                html.write_top_cell('esrvcc切换差小区')
+            except:
+                pass
+
         # volte低接通小区
         db.getdata(
             ini.cell_raw_all_lowconnect, timetype='top', counter='qci1无线接通率')
@@ -884,6 +944,28 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_lowconnect = 1
+            try:
+                html.write_top_cell('volte接通差小区')
+            except:
+                pass
+
+        # 高拥塞小区
+        db.getdata(
+            ini.top_kpi_sql, timetype='top', counter='拥塞次数', threshold=500)
+        db.displaydata(datatype='overcrowding')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  高拥塞小区')
+
+            # 保留高拥塞小区信息
+            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_overcrowding'] == '1':
+                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                dis_pm.autodisabledpmmeasurementdata['overcrowding'] = [temp_i[2] for temp_i in db.dbdata]
+                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区因拥塞对现网指标影响较大，'
+                                '已尝试将RRC测量上报开关关闭!!!</b></font>')
+                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+            html.table()
+            self.topcelln += 1
+            ini.subject_overcrowding = 1
 
         # QCI1下行丢包率
         db.getdata(
@@ -928,23 +1010,6 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_sleep_0 = 1
-        # 高拥塞小区
-        db.getdata(
-            ini.top_kpi_sql, timetype='top', counter='拥塞次数', threshold=500)
-        db.displaydata(datatype='overcrowding')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  高拥塞小区')
-
-            # 保留高拥塞小区信息
-            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_overcrowding'] == '1':
-                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
-                dis_pm.autodisabledpmmeasurementdata['overcrowding'] = [temp_i[2] for temp_i in db.dbdata]
-                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区因拥塞对现网指标影响较大，'
-                                '已尝试将RRC测量上报开关关闭!!!</b></font>')
-                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
-            html.table()
-            self.topcelln += 1
-            ini.subject_overcrowding = 1
 
         # 最大激活用户数检测
         db.getdata(ini.maxue, timetype='top')
@@ -998,12 +1063,6 @@ class Autodisablepm:
         for temp_table in self.autodisabledpmmeasurementdata:
             if temp_table != 'mark':
                 for temp_enbid in self.autodisabledpmmeasurementdata[temp_table]:
-
-                    if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
-                        self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
-                            temp_enbid][1]
-                        self.disabledpmmeasurement_list['mark'] = 1
-
                     try:
                         if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
                             self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
@@ -1116,12 +1175,12 @@ class Autodisablepm:
                                                temp_enbid,
                                                '.log')), 'r') as f_log:
                                 for temp_line in f_log.readlines():
-                                    if 'Connecting to' in temp_line:
+                                    if 'Commissioning Tool version' in temp_line:
                                         f_dml.write(temp_line[:14])
                                         f_dml.write(',')
                                     if 'Operations finished successfully' in temp_line:
                                         f_dml.write(temp_line[:14])
-                                        f_dml.write('\n')
+                            f_dml.write('\n')
                         except:
                             f_dml.write('\n')
         print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
@@ -1158,7 +1217,6 @@ if __name__ == '__main__':
         if dis_pm.autodisabledpmmeasurementdata['mark'] == 1:
             if dis_pm.format_enbid_ip() == 0:
                 print('>>> 未存在需关闭测量小区。')
-                sys.exit()
             else:
                 print('>>> 开始尝试关闭小区测量...')
                 dis_pm.creat_bat()
@@ -1166,11 +1224,17 @@ if __name__ == '__main__':
                 dis_pm.creat_log()
 
         # 发送邮件
-        if ini.main['actemail'] == '1':
-            email = Email()
-            email.loging()
-            email.emailtext(html.MIMEtext)
-            email.sendemail()
-            email.smtpObj.close()
+        try:
+            if ini.main['actemail'] == '1':
+                email = Email()
+                email.loging()
+                email.emailtext(html.MIMEtext)
+                email.sendemail()
+                email.smtpObj.close()
+        except:
+            pass
+
+        print('\n')
+        print('='*36)
 
     print(''.join((time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))))
