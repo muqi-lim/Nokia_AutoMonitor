@@ -62,6 +62,8 @@ update log:
 2017-11-14 关闭测量log增加关闭测量开始时间及结束时间；
 2017-11-14 hour表volte低接通根据当天累计进行统计；
 2017-11-16 volte低接通小区、srvcc切换差小区的kpi详情记录到log；
+2017-11-21 增加关闭测量的enbid例外，在例外列表里面的基站不会执行自动关闭测量；
+2017年11月23日 休眠小区新算法，有随机接入申请但是没有RRC申请的小区；
 
 
 ''')
@@ -197,6 +199,7 @@ class Getini:
             self.maxue = 'maxue_raw'
             self.cell_raw_all_lowconnect = 'cell_raw_all_lowconnect'
             self.cell_raw_all_dl_low_vo_loss = 'cell_raw_all_dl_low_vo_loss'
+            self.休眠小区 = '休眠小区'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
@@ -232,17 +235,7 @@ class Getini:
             self.kpi[n.lower()] = n_child
 
     def cellinfo(self):
-        # f = open('/'.join((self.path, 'cellinfo.csv')), 'r', encoding='utf-8-sig')
-        # k = 0
-        # self.cellinfo_data = {}
-        # for i in f.readlines():
-        #     if k == 0:
-        #         self.cellinfo_head = i.split(',')
-        #         k = 1
-        #     else:
-        #         self.cellinfo_data[i.split(',')[0]] = i.split(',')
-        # f.close()
-
+        # 读取小区IP信息
         workbook = xlrd.open_workbook('/'.join((self.path, 'cellinfo.xlsx')))
         table = workbook.sheet_by_index(0)
         self.cellinfo_data = {}
@@ -252,6 +245,19 @@ class Getini:
             else:
                 self.cellinfo_data[table.row_values(i)[0]] = table.row_values(i)
 
+        # 读取关闭测量例外小区
+        self.Except_Enb_List = {}
+        workbook = xlrd.open_workbook('/'.join((self.path, 'Except_Enb_List.xlsx')))
+        for temp_table in workbook.sheet_names():
+            for i in range(workbook.sheet_by_name(temp_table).nrows):
+                if i > 0:
+                    if temp_table not in self.Except_Enb_List:
+                        self.Except_Enb_List[temp_table] = []
+                    try:
+                        self.Except_Enb_List[temp_table].append(str(int(workbook.sheet_by_name(
+                            temp_table).row_values(i)[0])))
+                    except:
+                        pass
 
 class Db:
     def __init__(self, ip, user, pwd):
@@ -484,6 +490,15 @@ class Db:
                     sys.exit()
                 self.kpi_dict[n.lower()] = n_child
 
+        def 休眠小区():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('休眠小区'):
+                n_child = ini.cf_sql.get('休眠小区', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
                         'top_qci1connect': top_qci1connect,
@@ -502,7 +517,8 @@ class Db:
                         'top_volte_drop': top_volte_drop,
                         'top_volte_uldrop': top_volte_uldrop,
                         'top_volte_dldrop': top_volte_dldrop,
-                        'maxue': maxue
+                        'maxue': maxue,
+                        '休眠小区': 休眠小区,
                         }
 
         datatypelist[datatype]()
@@ -994,6 +1010,14 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_gps = 1
+        # 休眠小区，有随机接入申请，但是全部失败
+        db.getdata(ini.休眠小区, timetype='top', counter='PREAMBLE_REQ')
+        db.displaydata(datatype='休眠小区')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  接入异常小区')
+            html.table()
+            self.topcelln += 1
+            ini.subject_sleep = 1
         # 休眠小区
         db.getdata(ini.sleepingcell_sql)
         db.displaydata(datatype='sleepingcell')
@@ -1060,16 +1084,23 @@ class Autodisablepm:
             'top_volte_connect': {},
             'top_volte_dldrop': {},
         }
+        top_name_tran = {
+            'overcrowding': '拥塞',
+            'top_srvcc': 'eSRVCC切换差小区',
+            'top_volte_connect': 'Volte低接通小区',
+            'top_volte_dldrop': 'Volte高丢包',
+        }
         for temp_table in self.autodisabledpmmeasurementdata:
             if temp_table != 'mark':
                 for temp_enbid in self.autodisabledpmmeasurementdata[temp_table]:
-                    try:
-                        if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
-                            self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
-                                temp_enbid][1]
-                            self.disabledpmmeasurement_list['mark'] = 1
-                    except:
-                        print(''.join(('>>> 基础数据 cellinfo 中未存在ENBID:', temp_enbid[:6], ' ,请检查完善！')))
+                    if str(temp_enbid[:6]) not in ini.Except_Enb_List[top_name_tran[temp_table]]:
+                        try:
+                            if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
+                                self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
+                                    temp_enbid][1]
+                                self.disabledpmmeasurement_list['mark'] = 1
+                        except:
+                            print(''.join(('>>> 基础数据 cellinfo 中未存在ENBID:', temp_enbid[:6], ' ,请检查完善！')))
         # 如果所有小区都没有读取到ip，则退出
         if self.disabledpmmeasurement_list['mark'] == 0:
             return 0
