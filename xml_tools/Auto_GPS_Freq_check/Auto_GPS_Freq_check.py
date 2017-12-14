@@ -7,6 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 import datetime
 import xlrd
+import subprocess
 
 ##############################################################################
 print("""
@@ -34,6 +35,7 @@ update log:
 2017-10-7 修复当基站数超过1400个时在线获取log数据失败的bug
 2017-10-7 新增并发数控制，可以自定义并发在线获取基站数目
 2017-10-19 新增ip基础信息，可以在处理结果中匹配对应IP的基站信息；
+2017-12-01 支持对gps异常小区进行闭锁；
 
 
 ''')
@@ -57,7 +59,7 @@ class Main:
         self.data = {}
         self.head_list = []
         # 闭锁小区限制个数
-        self.block_num = 5
+        self.block_num = 10
 
     # 进度条
     @staticmethod
@@ -113,22 +115,30 @@ class Main:
         return datetime.datetime.strftime(time_time_diff, "%Y/%m/%d %H:%M:%S")
 
     def circuit(self):
-        # 读取IP文件
-        with open(os.path.join(self.main_path, 'addresses.txt')) as f_ip:
-            ip_list = [temp_ip for temp_ip in f_ip]
-        # 设置每次连接获取IP数量
-        get_ip_num = 200
-        if len(ip_list)//get_ip_num == 0:
-            times = 1
-        else:
-            times = len(ip_list)//get_ip_num + 1
-        for temp_times in range(times):
-            f_temp_ip = open(os.path.join(self.main_path, 'TEMP', 'temp_addresses.txt'), 'w', encoding='utf-8')
-            f_temp_ip.write(''.join(ip_list[temp_times*get_ip_num:temp_times*get_ip_num+get_ip_num]))
-            f_temp_ip.close()
+        if self.config['online_get_file'] == ['1']:
+            # 自动删除历史数据
+            if self.config['auto_delete'] == ['1']:
+                print('>>> 删除历史log...')
+                cmd_text = 'del ' + os.path.join(self.main_path, 'TEMP\*_FrequencyHistory.xml')
+                # os.system(cmd_text)
+                aa = subprocess.Popen(cmd_text, startupinfo=startupinfo, shell=True)
+                aa.wait()
+                print('>>> 删除历史log完成！')
+            # 读取IP文件
+            with open(os.path.join(self.main_path, 'addresses.txt')) as f_ip:
+                ip_list = [temp_ip for temp_ip in f_ip]
+            # 设置每次连接获取IP数量
+            get_ip_num = 200
+            if len(ip_list)//get_ip_num == 0:
+                times = 1
+            else:
+                times = len(ip_list)//get_ip_num + 1
+            for temp_times in range(times):
+                f_temp_ip = open(os.path.join(self.main_path, 'TEMP', 'temp_addresses.txt'), 'w', encoding='utf-8')
+                f_temp_ip.write(''.join(ip_list[temp_times*get_ip_num:temp_times*get_ip_num+get_ip_num]))
+                f_temp_ip.close()
 
-            # 调用工具，获取基站数据
-            if self.config['online_get_file'] == ['1']:
+                # 调用工具，获取基站数据
                 print('>>> 开始连接基站，获取log...')
                 os.chdir(self.config['cli_path'][0])
                 cmd_text = ''.join((
@@ -141,7 +151,9 @@ class Main:
                     ' -concurrent ',
                     self.config['concurrent'][0]
                 ))
-                os.system(cmd_text)
+                aa = subprocess.Popen(cmd_text, startupinfo=startupinfo)
+                aa.wait()
+
         # 获取本地log数据
         self.get_files()
 
@@ -179,15 +191,18 @@ class Main:
             # 检查结果存在异常，进入下一步处理
             if len(self.dacword_error_list) != 0:
                 print('>>> 存在GPS异常基站,请尽快处理！')
-
+                self.temp_hour = time.strftime('%H', time.localtime())
                 # 闭锁基站
                 if self.config['auto_locked'] == ['block']:
                     if len(self.dacword_error_list) > self.block_num:
                         print('>>> 异常基站个数超过限制个数，不启动紧急闭锁基站，请检查是否设置异常或手动闭锁基站...')
                     else:
-                        print('>>> 开始紧急闭锁基站...')
-                        self.enable_lock()
-                        print('>>> 紧急闭锁基站完成！')
+                        if self.temp_hour not in self.config['auto_locked_time']:
+                            print('>>> 非操作时段，不启动紧急闭锁基站，请检查是否设置异常或手动闭锁基站...')
+                        else:
+                            print('>>> 开始尝试紧急闭锁基站...')
+                            self.enable_lock()
+                            print('>>> 尝试紧急闭锁基站完成，请尽快检查小区状态！')
 
                 # 生成 html 文件
                 self.html()
@@ -292,7 +307,9 @@ class Main:
                 self.main_path,
                 '/TEMP'
             ))
-            os.system(cmd_text)
+            # os.system(cmd_text)
+            aa = subprocess.Popen(cmd_text, startupinfo=startupinfo)
+            aa.wait()
 
     def html(self):
         # html 头部
@@ -313,9 +330,14 @@ class Main:
                 <h1><pre>HI，all! 以下基站检测到GPS异常，因异常基站个数超过限制个数，不启动紧急闭锁基站，请检查是否设置异常或手动闭锁基站...！</pre></h1>
                 '''
             else:
-                self.MIMEtext += '''
-                <h1><pre>HI，all! 以下基站检测到GPS异常，已尝试将小区闭锁，请尽快检查处理！</pre></h1>
-                '''
+                if self.temp_hour not in self.config['auto_locked_time']:
+                    self.MIMEtext += '''
+                    <h1><pre>HI，all! 以下基站检测到GPS异常，非操作时段，不启动紧急闭锁基站，请检查是否设置异常或手动闭锁基站...</pre></h1>
+                    '''
+                else:
+                    self.MIMEtext += '''
+                    <h1><pre>HI，all! 以下基站检测到GPS异常，已尝试将小区闭锁，请尽快检查处理！</pre></h1>
+                    '''
         else:
             self.MIMEtext += '''
             <h1><pre>HI，all! 以下基站检测到GPS异常，请尽快处理！</pre></h1>
@@ -385,10 +407,13 @@ class Main:
         # 邮件正文
         self.message = MIMEText(self.MIMEtext, 'html', 'utf-8')
         # 邮件标题
-        if self.config['auto_locked'] == ['block'] and len(self.dacword_error_list) <= self.block_num:
-            self.message['Subject'] = '【闭锁】' + self.config['subject'][0] + self.now_time
+        if self.config['auto_locked'] == ['block']:
+            if len(self.dacword_error_list) <= self.block_num and self.temp_hour in self.config['auto_locked_time']:
+                self.message['Subject'] = '【闭锁】' + self.config['subject'][0] + self.now_time
+            else:
+                self.message['Subject'] = '【未闭锁】' + self.config['subject'][0] + self.now_time
         else:
-            self.message['Subject'] = '【未闭锁】' + self.config['subject'][0] + self.now_time
+            self.message['Subject'] = self.config['subject'][0] + self.now_time
         # 邮件发送邮箱
         self.message['From'] = self.config['mail_user'][0]
         # 邮件收件人
@@ -407,6 +432,12 @@ class Main:
 
 
 if __name__ == '__main__':
+    if os.name == 'nt':
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+    else:
+        startupinfo = None
     print(time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))
     star_time = time.time()
     main = Main()
