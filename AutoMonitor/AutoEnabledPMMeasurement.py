@@ -56,6 +56,7 @@ class Main:
         self.today = datetime.date.today().strftime('%Y%m%d')
         self.yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y/%m/%d')
         self.nowtime = datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+        self.nowtime_text = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
     def get_file_list(self):
         # 生成命令列表
@@ -75,24 +76,31 @@ class Main:
         with open(self.bat_path, 'w') as f_em:
             for temp_log in f_csv:
                 if [temp_log[0], temp_log[5]] == [self.yesterday, 'Successfully']:
+                    if temp_log[2] == 'eSRVCC切换差小区':
+                        cmd_type = '-deltafile '
+                    else:
+                        cmd_type = '-parameterfile '
                     temp_text = ''.join(('call commission.bat -ne ',
                                         temp_log[4],
-                                         ' -pw Nemuadmin:nemuuser -parameterfile ',
-                                         self.bat_file_list[temp_log[2]][1],
+                                         ' -pw Nemuadmin:nemuuser ',
+                                         cmd_type,
+                                         temp_log[9],
                                          ' |tee ./temp/',
                                          'Enble-',
                                          self.bat_file_list[temp_log[2]][0],
                                          '-',
                                          temp_log[3],
+                                         '-',
+                                         self.nowtime_text,
                                          '.log'))
                     if temp_log[2] not in self.enabledpmmeasurement_list:
                         self.enabledpmmeasurement_list[temp_log[2]] = []
                     if [temp_log[3], temp_log[4]] not in self.enabledpmmeasurement_list[temp_log[2]]:
                         self.enabledpmmeasurement_list[temp_log[2]].append([temp_log[3], temp_log[4]])
 
-                    self.cmd_list.append(temp_text)
-                    f_em.write(temp_text)
-                    f_em.write('\n')
+                        self.cmd_list.append(temp_text)
+                        f_em.write(temp_text)
+                        f_em.write('\n')
         f.close()
         print('>>> 获取完成！')
 
@@ -144,12 +152,16 @@ class Main:
                                            self.bat_file_list[temp_table][0],
                                            '-',
                                            temp_enbid[0],
+                                           '-',
+                                           self.nowtime_text,
                                            '.log')), 'r') as f_log:
                             log_info = f_log.read()
                             if 'Successfully activated' in log_info:
                                 f_dml.write('Successfully')
                             elif ' Connection from 0.0.0.0 exists' in log_info:
                                 f_dml.write('Connection refused')
+                            elif 'Commissioning failed (validation failure)' in log_info:
+                                f_dml.write('Commissioning failed (validation failure)')
                             elif 'Cannot connect to' in log_info:
                                 f_dml.write('Connection Failed')
                             elif 'Commissioning failed' in log_info:
@@ -158,6 +170,10 @@ class Main:
                                 f_dml.write('Maximum number of connections has exceeded')
                             elif 'Failed to get HW data' in log_info:
                                 f_dml.write('Failed to get HW data')
+                            elif 'Failed to read parameters' in log_info:
+                                f_dml.write('Failed to read parameters')
+                            elif "Managed object can't be updated. It does not exist" in log_info:
+                                f_dml.write("Managed object can't be updated. It does not exist")
                             else:
                                 f_dml.write('Other Failed')
                         f_dml.write('\n')

@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 from multiprocessing.dummy import Pool as ThreadPool
 import xlrd
 import openpyxl
+import traceback
 
 ##############################################################################
 print("""
@@ -63,8 +64,11 @@ update log:
 2017-11-14 hour表volte低接通根据当天累计进行统计；
 2017-11-16 volte低接通小区、srvcc切换差小区的kpi详情记录到log；
 2017-11-21 增加关闭测量的enbid例外，在例外列表里面的基站不会执行自动关闭测量；
-2017年11月23日 休眠小区新算法，有随机接入申请但是没有RRC申请的小区；
-
+2017-11-23 休眠小区新算法，有随机接入申请但是没有RRC申请的小区；
+2017-12-1 raw_monitor模块改进srvcc切换top小区关闭测量算法，支持 关闭srvcc切换开关、修改B2门限两种模式；
+            关闭srvcc切换开关模式已修复当激活actGsmSrvccMeasOpt时关闭srvcc切换功能参数报错问题；
+2017-12-9 raw_monitor模块增加小区可用率检测；
+2017-12-9 raw_monitor模块增加volte掉话检测；
 
 ''')
 
@@ -94,7 +98,8 @@ class Getini:
         # 表头判断
         self.subject_overcrowding = 0
         self.subject_sleep = 0
-        self.subject_sleep_0 = 0
+        self.available_range = 0
+        self.volte_drop = 0
         self.subject_gps = 0
         self.subject_maxue = 0
         self.subject_srvcc = 0
@@ -200,6 +205,7 @@ class Getini:
             self.cell_raw_all_lowconnect = 'cell_raw_all_lowconnect'
             self.cell_raw_all_dl_low_vo_loss = 'cell_raw_all_dl_low_vo_loss'
             self.休眠小区 = '休眠小区'
+            self.可用率 = '可用率'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
@@ -259,6 +265,7 @@ class Getini:
                     except:
                         pass
 
+
 class Db:
     def __init__(self, ip, user, pwd):
         self.ip = ip
@@ -277,6 +284,41 @@ class Db:
         except:
             print('无法连接数据库：', self.ip, ',请检查网络或数据库设置!')
             self.connectstate = 0
+
+    def getpara(self, kpi_type):
+        para_sql_list = {
+            'top_srvcc': 'para_srvcc',
+        }
+        enb_list_text_list_temp = list(dis_pm.disabledpmmeasurement_list[kpi_type].keys())
+        enb_list_text_list = ''
+        for i in enb_list_text_list_temp:
+            enb_list_text_list += "'"
+            enb_list_text_list += str(i)
+            enb_list_text_list += "'"
+            enb_list_text_list += ","
+        enb_list_text = enb_list_text_list[:-1]
+        # enb_list_text = ','.join(list(dis_pm.disabledpmmeasurement_list[kpi_type].keys()))
+
+        if enb_list_text == '':
+            enb_list_text = "''"
+        sqlfullname = ''.join(
+            (ini.sqlpath, '/', para_sql_list[kpi_type], '.sql'))
+        sql_text_add = 'and BTS.CO_OBJECT_INSTANCE in ({0})'.format(enb_list_text)
+        try:
+            f_sql = open(sqlfullname)
+            try:
+                sql_text = f_sql.read().replace('--&1', sql_text_add)
+            except:
+                print('>>>  ', sqlfullname, ' 脚本异常，请检查！')
+        except:
+            print('>>> ', sqlfullname, ' 不存在，请检查！')
+        try:
+            self.dateget = self.cc.execute(sql_text)
+        except:
+            print('>>> 查询出错，请检查SQL脚本！！', sqlfullname)
+        headlist = [child for child in self.dateget.description]
+        dbdata = self.dateget.fetchall()
+        return [headlist, dbdata]
 
     def getdata(self,
                 sqlname,
@@ -499,6 +541,15 @@ class Db:
                     sys.exit()
                 self.kpi_dict[n.lower()] = n_child
 
+        def 可用率():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('可用率'):
+                n_child = ini.cf_sql.get('可用率', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
                         'top_qci1connect': top_qci1connect,
@@ -519,6 +570,7 @@ class Db:
                         'top_volte_dldrop': top_volte_dldrop,
                         'maxue': maxue,
                         '休眠小区': 休眠小区,
+                        '可用率': 可用率,
                         }
 
         datatypelist[datatype]()
@@ -545,6 +597,7 @@ class Email:
             print('>>> 登录email成功。')
         except:
             print('>>> email登录失败，请检查！')
+            traceback.print_exc()
             # sys.exit()
 
     def emailtext(self, text):
@@ -555,6 +608,12 @@ class Email:
         self.message = MIMEText(self.maintext, 'html', 'utf-8')
         temp_subject = db.ip + '-'
         if ini.config['timetype'] == 'raw_monitor':
+            if ini.subject_sleep == 1:
+                temp_subject += '【接入异常】'
+            if ini.available_range == 1:
+                temp_subject += '【可用率】'
+            if ini.volte_drop == 1:
+                temp_subject += '【掉话】'
             if ini.subject_srvcc == 1:
                 temp_subject += '【eSRVCC】'
             if ini.subject_lowconnect == 1:
@@ -563,10 +622,6 @@ class Email:
                 temp_subject += '【拥塞】'
             if ini.subject_dl_low_vo_loss == 1:
                 temp_subject += '【高丢包】'
-            if ini.subject_sleep == 1:
-                temp_subject += '【休眠】'
-            if ini.subject_sleep_0 == 1:
-                temp_subject += '【零流量】'
             if ini.subject_gps == 1:
                 temp_subject += '【干扰】'
             if ini.subject_maxue == 1:
@@ -910,11 +965,54 @@ class Report:
             encoding='utf-8')
         f_html.write(html.MIMEtext)
         f_html.close()
-        print('>>> 数据获取完成，已生成html报告!')
+        print('>>> 数据获取完成1，已生成html报告!')
 
     def raw_monitor(self, type):
         html.head()
         html.body('h1', 'HI，最近15分钟存在KPI恶化明显小区，可能对整网指标影响较大，请尽快处理！')
+
+        # 休眠小区，有随机接入申请，但是全部失败
+        db.getdata(ini.休眠小区, timetype='top', counter='PREAMBLE_REQ')
+        db.displaydata(datatype='休眠小区')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  接入异常小区')
+            html.table()
+            self.topcelln += 1
+            ini.subject_sleep = 1
+        if len(db.dbdata) != 0:
+            try:
+                html.write_top_cell('接入异常小区')
+            except:
+                pass
+
+        # 可用率异常小区
+        db.getdata(ini.可用率)
+        db.displaydata(datatype='可用率')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  可用率异常小区')
+            html.table()
+            self.topcelln += 1
+            ini.available_range = 1
+
+        # volte高掉话小区
+        db.getdata(
+            ini.top_kpi_sql,
+            timetype='top',
+            counter='QCI1掉线次数_监控_2',
+            threshold='1',
+            top_n='999'
+        )
+        db.displaydata(datatype='top_volte_drop')
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  volte掉话')
+            html.table()
+            self.topcelln += 1
+            ini.volte_drop = 1
+            try:
+                html.write_top_cell('volte掉话')
+            except:
+                pass
+
         # esrvcc切换差小区
         db.getdata(
             ini.top_kpi_sql,
@@ -941,13 +1039,12 @@ class Report:
                 html.write_top_cell('esrvcc切换差小区')
             except:
                 pass
-
         # volte低接通小区
         db.getdata(
             ini.cell_raw_all_lowconnect, timetype='top', counter='qci1无线接通率')
         db.displaydata(datatype='top_volte_connect')
         if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  qci1无线接通率')
+            html.body('h2', '   ◎  VOLTE低接通')
 
             # 保留TOP小区信息
             if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_volte_connect'] == '1':
@@ -982,13 +1079,17 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_overcrowding = 1
+            try:
+                html.write_top_cell('高拥塞小区')
+            except:
+                pass
 
         # QCI1下行丢包率
         db.getdata(
             ini.cell_raw_all_dl_low_vo_loss, timetype='top', counter='QCI1下行丢包率')
         db.displaydata(datatype='top_volte_dldrop')
         if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  QCI1下行丢包率')
+            html.body('h2', '   ◎  QCI1丢包率')
 
             # 保留TOP小区信息
             if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_cell_raw_all_dl_low_vo_loss'] == '1':
@@ -1001,6 +1102,10 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_dl_low_vo_loss = 1
+            try:
+                html.write_top_cell('QCI1下行丢包率')
+            except:
+                pass
 
         # GPS故障小区
         db.getdata(ini.alarm_sql)
@@ -1010,14 +1115,7 @@ class Report:
             html.table()
             self.topcelln += 1
             ini.subject_gps = 1
-        # 休眠小区，有随机接入申请，但是全部失败
-        db.getdata(ini.休眠小区, timetype='top', counter='PREAMBLE_REQ')
-        db.displaydata(datatype='休眠小区')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  接入异常小区')
-            html.table()
-            self.topcelln += 1
-            ini.subject_sleep = 1
+
         # 休眠小区
         db.getdata(ini.sleepingcell_sql)
         db.displaydata(datatype='sleepingcell')
@@ -1033,7 +1131,7 @@ class Report:
             html.body('h2', '   ◎  休眠及零流量小区')
             html.table()
             self.topcelln += 1
-            ini.subject_sleep_0 = 1
+            ini.subject_sleep = 1
 
         # 最大激活用户数检测
         db.getdata(ini.maxue, timetype='top')
@@ -1074,6 +1172,14 @@ class Autodisablepm:
             'top_volte_connect': [],
             'top_volte_dldrop': [],
         }
+        self.para_value_list = {'top_srvcc': {}}
+        #每个基站生成对应此xml
+        self.cmd_xml_name_list = {
+            'top_srvcc': {
+                'up': {},
+                'bu': {}
+            }
+        }
 
     def format_enbid_ip(self):
         # 获取高拥塞小区，并转化成 {enbid：ip} 格式
@@ -1095,9 +1201,15 @@ class Autodisablepm:
                 for temp_enbid in self.autodisabledpmmeasurementdata[temp_table]:
                     if str(temp_enbid[:6]) not in ini.Except_Enb_List[top_name_tran[temp_table]]:
                         try:
-                            if ini.cellinfo_data[temp_enbid][1].count('.') == 3:
-                                self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = ini.cellinfo_data[
-                                    temp_enbid][1]
+                            if str(ini.cellinfo_data[temp_enbid][1]).count('.') == 3:
+                                if temp_enbid[:6] not in self.disabledpmmeasurement_list[temp_table]:
+                                    self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]] = [ini.cellinfo_data[
+                                                                                                       temp_enbid][1],
+                                                                                                   [temp_enbid]
+                                                                                                   ]
+                                else:
+                                    if temp_enbid not in self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]][1]:
+                                        self.disabledpmmeasurement_list[temp_table][temp_enbid[:6]][1].append(temp_enbid)
                                 self.disabledpmmeasurement_list['mark'] = 1
                         except:
                             print(''.join(('>>> 基础数据 cellinfo 中未存在ENBID:', temp_enbid[:6], ' ,请检查完善！')))
@@ -1107,33 +1219,224 @@ class Autodisablepm:
         else:
             return 1
 
+    def para_format(self, value_list, kpi_type):
+        headlist, dbdata = value_list[0], value_list[1]
+        headlist = [i[0] for i in headlist]
+        # 生成参数列表
+        for i in dbdata:
+            if i[1] in self.para_value_list[kpi_type]:
+                if i[2] in self.para_value_list[kpi_type][i[1]]:
+                    self.para_value_list[kpi_type][i[1]][i[2]].append(dict(zip(headlist, i)))
+                else:
+                    self.para_value_list[kpi_type][i[1]][i[2]] = []
+                    self.para_value_list[kpi_type][i[1]][i[2]].append(dict(zip(headlist, i)))
+            else:
+                self.para_value_list[kpi_type][i[1]] = {}
+                self.para_value_list[kpi_type][i[1]][i[2]] = []
+                self.para_value_list[kpi_type][i[1]][i[2]].append(dict(zip(headlist, i)))
+
+        for temp_enbid in self.disabledpmmeasurement_list[kpi_type]:
+            self.cmd_xml_name_list[kpi_type]['up'][temp_enbid] = ''.join((
+                'temp_para_',
+                kpi_type,
+                '_',
+                temp_enbid,
+                '_',
+                ini.htmlname,
+                '.xml'
+            ))
+            self.cmd_xml_name_list[kpi_type]['bu'][temp_enbid] = ''.join((
+                'temp_para_',
+                kpi_type,
+                '_',
+                temp_enbid,
+                '_',
+                ini.htmlname,
+                '_bu.xml'
+            ))
+        # 对应基站生成对应的参数修改xml
+        if kpi_type == 'top_srvcc':
+            for temp_enbid in self.disabledpmmeasurement_list[kpi_type]:
+                temp_xml_path_name = os.path.join(
+                    ini.path,
+                    'CommisionTool',
+                    self.cmd_xml_name_list[kpi_type]['up'][temp_enbid]
+                )
+                temp_xml_path_name_bu = os.path.join(
+                    ini.path,
+                    'CommisionTool',
+                    self.cmd_xml_name_list[kpi_type]['bu'][temp_enbid]
+                )
+                f = open(temp_xml_path_name, 'w')
+                f_bu = open(temp_xml_path_name_bu, 'w')
+                f.write('<raml xmlns="raml21.xsd" version="2.1">\n')
+                f.write('<cmData id="3221225472" scope="all" type="plan">\n')
+                f_bu.write('<raml xmlns="raml21.xsd" version="2.1">\n')
+                f_bu.write('<cmData id="3221225472" scope="all" type="plan">\n')
+                if ini.config['top_srvcc_type'] == 'disactive':
+                    for temp_cellid in self.para_value_list[kpi_type][temp_enbid]:
+                        if self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['ACTGSMSRVCCMEASOPT'] == 1:
+                    # for temp_cellid in self.disabledpmmeasurement_list[kpi_type][temp_enbid][1]:
+                    #     if self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['ACTGSMSRVCCMEASOPT'] == 1:
+                            temp_object = ''.join((
+                                '<managedObject class="LNCEL" version="',
+                                self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
+                                '" distName="MRBTS-',
+                                temp_enbid,
+                                '/LNBTS-',
+                                temp_enbid,
+                                '/LNCEL-',
+                                temp_cellid.split('_')[1],
+                                '" operation="update">\n'
+                            ))
+                            f.write(temp_object)
+                            f.write('<p name="actGsmSrvccMeasOpt">false</p>\n')
+                            f.write('</managedObject>\n')
+                            f_bu.write(temp_object)
+                            f_bu.write('<p name="actGsmSrvccMeasOpt">true</p>\n')
+                            f_bu.write('</managedObject>\n')
+                    temp_object = ''.join((
+                        '<managedObject class="LNBTS" version="',
+                        self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
+                        '" distName="MRBTS-',
+                        temp_enbid,
+                        '/LNBTS-',
+                        temp_enbid,
+                        '" operation="update">\n'
+                    ))
+                    f.write(temp_object)
+                    f.write('<p name="actSrvccToGsm">false</p>\n')
+                    f.write('</managedObject>\n')
+                    f_bu.write(temp_object)
+                    f_bu.write('<p name="actSrvccToGsm">true</p>\n')
+                    f_bu.write('</managedObject>\n')
+                elif ini.config['top_srvcc_type'] == 'b2':
+                    print(self.disabledpmmeasurement_list[kpi_type][temp_enbid])
+                    for temp_cellid in self.disabledpmmeasurement_list[kpi_type][temp_enbid][1]:
+                        print(self.para_value_list[kpi_type][temp_enbid][temp_cellid])
+                        for temp_id in self.para_value_list[kpi_type][temp_enbid][temp_cellid]:
+                            if temp_id['THRESHOLD4'] >= int(ini.config['b2Threshold1GERANQci1'.lower()]):
+                                b2threshold1geranqci1 = int(temp_id['THRESHOLD4']) + 1 + 140
+                            else:
+                                b2threshold1geranqci1 = int(ini.config['b2Threshold1GERANQci1'.lower()]) + 140
+                            if temp_id['B2THRESHOLD2RSSIGERANQCI1'] >= int(ini.config[
+                                                                               'b2Threshold2RssiGERANQci1_1'.lower()]):
+                                b2threshold2rssigeranqci1 = int(ini.config['b2Threshold2RssiGERANQci1_2'.lower()]) + 110
+                            else:
+                                b2threshold2rssigeranqci1 = int(ini.config['b2Threshold2RssiGERANQci1_1'.lower()]) + 110
+
+                            temp_object = ''.join((
+                                '<managedObject class="LNHOG" version="',
+                                temp_id['VERSION'],
+                                '" distName="MRBTS-',
+                                temp_enbid,
+                                '/LNBTS-',
+                                temp_enbid,
+                                '/LNCEL-',
+                                temp_cellid.split('_')[1],
+                                '/LNHOG-',
+                                temp_id['LNHOG_ID'],
+                                '" operation="update">\n'
+                            ))
+                            f.write(temp_object)
+                            f.write('<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(b2threshold1geranqci1))
+                            f.write('<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(b2threshold2rssigeranqci1))
+                            f.write('</managedObject>\n')
+                            f_bu.write(temp_object)
+                            f_bu.write(
+                                '<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(temp_id[
+                                                                                       'B2THRESHOLD1GERANQCI1'
+                                                                                   ] + 140)
+                            )
+                            f_bu.write(
+                                '<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(temp_id[
+                                                                                           'B2THRESHOLD2RSSIGERANQCI1'
+                                                                                       ] + 110)
+                            )
+                            f_bu.write('</managedObject>\n')
+                f.write('</cmData>\n')
+                f.write('</raml>\n')
+                f_bu.write('</cmData>\n')
+                f_bu.write('</raml>\n')
+                f.close()
+                f_bu.close()
+
     def creat_bat(self):
         # 生成命令列表
         self.cmd_list = []
         # 生成BAT文件
-        bat_file_list = {
+        self.bat_file_list = {
             'overcrowding': 'disabled_mtUEstate.xml',
-            'top_srvcc': 'disabled_actSrvccToGsm.xml',
+            'top_srvcc': {
+            },
             'top_volte_connect': 'disabled_mtEPSBearer.xml',
             'top_volte_dldrop': 'disabled_mtQoS.xml',
         }
+        self.bat_file_list_bu = {
+            'overcrowding': 'enabled_mtUEstate.xml',
+            'top_srvcc': {
+            },
+            'top_volte_connect': 'enabled_mtEPSBearer.xml',
+            'top_volte_dldrop': 'enabled_mtQoS.xml',
+        }
         self.bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
-        with open(self.bat_path, 'w') as f_dm:
-            for temp_table in self.disabledpmmeasurement_list:
-                if temp_table != 'mark':
-                    for temp_enbid in self.disabledpmmeasurement_list[temp_table]:
+        self.bat_path_bu = ''.join((ini.path, '/CommisionTool/temp/EnabeledPMMeasurement_', ini.htmlname, '.bat'))
+        f_dm = open(self.bat_path, 'w')
+        f_dm_bu = open(self.bat_path_bu, 'w')
+        for temp_table in self.disabledpmmeasurement_list:
+            if temp_table != 'mark':
+                if temp_table == 'top_srvcc' and self.disabledpmmeasurement_list[temp_table] != {}:
+                    self.para_format(db.getpara(temp_table), temp_table)
+                for temp_enbid in self.disabledpmmeasurement_list[temp_table]:
+                    if temp_table == 'top_srvcc':
                         temp_text = ''.join(('call commission.bat -ne ',
-                                            self.disabledpmmeasurement_list[temp_table][temp_enbid],
+                                            self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
+                                             ' -pw Nemuadmin:nemuuser -deltafile ',
+                                             self.cmd_xml_name_list[temp_table]['up'][temp_enbid],
+                                             ' |tee ./temp/',
+                                             temp_table,
+                                             '-',
+                                             temp_enbid,
+                                             '-',
+                                             ini.htmlname,
+                                             '.log'))
+                        temp_text_bu = ''.join(('call commission.bat -ne ',
+                                                self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
+                                                ' -pw Nemuadmin:nemuuser -deltafile ',
+                                                self.cmd_xml_name_list[temp_table]['bu'][temp_enbid],
+                                                ' |tee ./temp/',
+                                                temp_table,
+                                                '-',
+                                                temp_enbid,
+                                                '-',
+                                                ini.htmlname,
+                                                '_bu.log'))
+                    else:
+                        temp_text = ''.join(('call commission.bat -ne ',
+                                            self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
                                              ' -pw Nemuadmin:nemuuser -parameterfile ',
-                                             bat_file_list[temp_table],
+                                             self.bat_file_list[temp_table],
                                              ' |tee ./temp/',
                                              temp_table,
                                              '-',
                                              temp_enbid,
                                              '.log'))
-                        self.cmd_list.append(temp_text)
-                        f_dm.write(temp_text)
-                        f_dm.write('\n')
+                        temp_text_bu = ''.join(('call commission.bat -ne ',
+                                                self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
+                                                ' -pw Nemuadmin:nemuuser -parameterfile ',
+                                                self.bat_file_list_bu[temp_table],
+                                                ' |tee ./temp/',
+                                                temp_table,
+                                                '-',
+                                                temp_enbid,
+                                                '_bu.log'))
+                    self.cmd_list.append(temp_text)
+                    f_dm.write(temp_text)
+                    f_dm.write('\n')
+                    f_dm_bu.write(temp_text_bu)
+                    f_dm_bu.write('\n')
+        f_dm.close()
+        f_dm_bu.close()
 
     def run_call(self, ii):
         return subprocess.call(ii, shell=True)
@@ -1158,7 +1461,7 @@ class Autodisablepm:
         f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
             f_csv_new = open(f_csv, 'w')
-            f_csv_new.write('日期,时间,类型,enbid,ip,关闭测量情况,关闭测量开始时间,关闭测量结束时间\n')
+            f_csv_new.write('日期,时间,类型,enbid,ip,关闭测量情况,关闭测量开始时间,关闭测量结束时间,调整xml,备份xml\n')
             f_csv_new.close()
         with open(f_csv, 'a') as f_dml:
             for temp_table in self.disabledpmmeasurement_list:
@@ -1173,15 +1476,26 @@ class Autodisablepm:
                         f_dml.write(',')
                         f_dml.write(str(temp_enbid))
                         f_dml.write(',')
-                        f_dml.write(str(self.disabledpmmeasurement_list[temp_table][temp_enbid]))
+                        f_dml.write(str(self.disabledpmmeasurement_list[temp_table][temp_enbid][0]))
                         f_dml.write(',')
+                        if temp_table == 'top_srvcc':
+                            log_path = ''.join((ini.path,
+                                                '/CommisionTool/temp/',
+                                                temp_table,
+                                                '-',
+                                                temp_enbid,
+                                                '-',
+                                                ini.htmlname,
+                                                '.log'))
+                        else:
+                            log_path = ''.join((ini.path,
+                                                '/CommisionTool/temp/',
+                                                temp_table,
+                                                '-',
+                                                temp_enbid,
+                                                '.log'))
                         try:
-                            with open(''.join((ini.path,
-                                               '/CommisionTool/temp/',
-                                               temp_table,
-                                               '-',
-                                               temp_enbid,
-                                               '.log')), 'r') as f_log:
+                            with open(log_path, 'r') as f_log:
                                 log_info = f_log.read()
                                 if 'Successfully activated' in log_info:
                                     f_dml.write('Successfully')
@@ -1189,31 +1503,45 @@ class Autodisablepm:
                                     f_dml.write('Connection refused')
                                 elif 'Cannot connect to' in log_info:
                                     f_dml.write('Connection Failed')
+                                elif 'Commissioning failed (validation failure)' in log_info:
+                                    f_dml.write('Commissioning failed (validation failure)')
                                 elif 'Commissioning failed' in log_info:
                                     f_dml.write('Commissioning failed')
                                 elif 'Maximum number of connections has exceeded' in log_info:
                                     f_dml.write('Maximum number of connections has exceeded')
                                 elif 'Failed to get HW data' in log_info:
                                     f_dml.write('Failed to get HW data')
+                                elif 'Failed to read parameters' in log_info:
+                                    f_dml.write('Failed to read parameters')
+                                elif "Managed object can't be updated. It does not exist" in log_info:
+                                    f_dml.write("Managed object can't be updated. It does not exist")
                                 else:
                                     f_dml.write('Other Failed')
                                 f_dml.write(',')
                             # 获取开始结束时间
-                            with open(''.join((ini.path,
-                                               '/CommisionTool/temp/',
-                                               temp_table,
-                                               '-',
-                                               temp_enbid,
-                                               '.log')), 'r') as f_log:
+                            with open(log_path, 'r') as f_log:
                                 for temp_line in f_log.readlines():
                                     if 'Commissioning Tool version' in temp_line:
                                         f_dml.write(temp_line[:14])
                                         f_dml.write(',')
                                     if 'Operations finished successfully' in temp_line:
                                         f_dml.write(temp_line[:14])
-                            f_dml.write('\n')
+                            f_dml.write(',')
                         except:
+                            f_dml.write(',')
+                        if temp_table == 'top_srvcc':
+                            f_dml.write(self.cmd_xml_name_list[temp_table]['up'][temp_enbid])
+                            f_dml.write(',')
+                            f_dml.write(self.cmd_xml_name_list[temp_table]['bu'][temp_enbid])
                             f_dml.write('\n')
+                        else:
+                            f_dml.write(self.bat_file_list[temp_table])
+                            f_dml.write(',')
+                            f_dml.write(self.bat_file_list_bu[temp_table])
+                            f_dml.write('\n')
+
+
+
         print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
 
 
