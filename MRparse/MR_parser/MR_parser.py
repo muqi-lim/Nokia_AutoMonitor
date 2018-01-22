@@ -27,7 +27,7 @@ def copy_right():
     """)
     logging.info('\n')
     auth_time = int(time.strftime('%Y%m%d', time.localtime(time.time())))
-    if auth_time > 20180101:
+    if auth_time > 20190101:
         logging.info(u'\n')
         logging.info(u'-' * 64)
         logging.info(u'试用版本已过期，请联系作者！')
@@ -59,6 +59,7 @@ def copy_right():
     2017-8-8 新增运行LOG；
     2017-9-5 新增MRO解码AOA表；
     2017-10-23 修复解码MRO时部分小区部分时段缺失bug；
+    2018-1-18 兼容FDD MRO解码MR覆盖率
 
     ''')
     logging.info(u'-' * 36)
@@ -352,12 +353,12 @@ class Main:
 
         return min_cell, min_stance
 
-    def mro_main(self, mro_object, report_time):
+    def mro_main(self, mro_object, report_time, enbid):
 
         """统计mro_main表"""
 
         temp_id = 1
-        ecid = int(mro_object.attrib['id'])
+        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         # cmcc重叠覆盖率采集数计数器
         overlap_times = 0
         temp_mro_main = []
@@ -413,10 +414,10 @@ class Main:
                     self.temp_mro_data[report_time][temp_mro_main[0]] = {}
                     self.temp_mro_data[report_time][temp_mro_main[0]][temp_mro_main[1]] = numpy.array(temp_mro_main[2])
 
-    def mro_ecid(self, object_mro, report_time):
+    def mro_ecid(self, object_mro, report_time, enbid):
         for value in object_mro.iter('v'):
             temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
-            ecid1 = int(object_mro.attrib['id'])
+            ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
             ecid_earfcn_pci_n_earfcn_n_pci = '_'.join(map(str, (ecid1,
                                                                 temp_value[7],
                                                                 temp_value[8],
@@ -458,13 +459,13 @@ class Main:
                             self.temp_mro_data[report_time][temp_mro_ecid[0]][temp_mro_ecid[1]] = numpy.array(
                                 temp_mro_ecid[2])
 
-    def mro_rsrp(self, mro_object, report_time):
-        ecid = int(mro_object.attrib['id'])
+    def mro_rsrp(self, mro_object, report_time, enbid):
+        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         for value in mro_object.iter('v'):
-            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
             temp_mro_rsrp = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-            temp_mro_rsrp[self.mro_rsrp_list[temp_value[0]]] = 1
+            temp_mro_rsrp[self.mro_rsrp_list[int(temp_value[0])]] = 1
             try:
                 self.temp_mro_data[report_time]['mro_rsrp'][ecid] += numpy.array(temp_mro_rsrp)
             except:
@@ -478,8 +479,8 @@ class Main:
                         self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: numpy.array(temp_mro_rsrp)}
             break
 
-    def mro_aoa(self, mro_object, report_time):
-        ecid = int(mro_object.attrib['id'])
+    def mro_aoa(self, mro_object, report_time, enbid):
+        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         for value in mro_object.iter('v'):
             temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
             temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -510,6 +511,15 @@ class Main:
                               :temp_file_header.attrib['startTime'].find(':')]
                 break
         return report_time
+
+    def get_enbid(self, tree):
+
+        """获取enbid"""
+        enbid = ''
+        for temp_file_header in tree.iter(tag='eNB'):
+            enbid = temp_file_header.attrib['id']
+            break
+        return enbid
 
     def parse_process(self, mr_type):
 
@@ -632,11 +642,12 @@ class Main:
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                         except:
-                            traceback.print_exc()
+                            pass
+                            # traceback.print_exc()
 
                     tar_f.close()
                 except:
-                    traceback.print_exc()
+                    # traceback.print_exc()
                     gzip_file = gzip.open(file_name)
                     if self.config_filter['active_filter'] != ['1']:
                         tree = ET.parse(gzip_file)
@@ -696,6 +707,7 @@ class Main:
                               'mro_aoa': self.mro_aoa,
                               }
                 report_time = self.get_report_time(tree)
+                enbid = self.get_enbid(tree)
                 for measurement in tree.iter('measurement'):
                     for smr in measurement.iter('smr'):
                         head_temp = smr.text.replace('.', '_').rstrip().split(' ')
@@ -704,9 +716,9 @@ class Main:
                                 # 分别生成需要的mro表
                                 for table_temp in self.config_mro['mro_parse_sheet']:
                                     if table_temp != 'mro_ecid':
-                                        table_list[table_temp](object_mro, report_time)
+                                        table_list[table_temp](object_mro, report_time, enbid)
                                     else:
-                                        table_list[table_temp](object_mro, '-')
+                                        table_list[table_temp](object_mro, '-', enbid)
 
         elif ishead == 1:
             # 获取需处理表名
