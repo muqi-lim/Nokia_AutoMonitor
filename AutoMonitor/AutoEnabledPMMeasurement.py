@@ -61,7 +61,7 @@ class Main:
     def get_file_list(self):
         # 生成命令列表
         print('>>> 获取需激活测量基站列表...')
-        self.cmd_list = []
+        self.cmd_list = {}
         self.enabledpmmeasurement_list = {}
         # 生成BAT文件
         self.bat_file_list = {
@@ -69,19 +69,20 @@ class Main:
             'eSRVCC切换差小区': ['top_srvcc', 'enabled_actSrvccToGsm.xml'],
             'Volte低接通小区': ['top_volte_connect', 'enabled_mtEPSBearer.xml'],
             'Volte高丢包': ['top_volte_dldrop', 'enabled_mtQoS.xml'],
+            'Volte高掉话': ['top_volte_drop', ''],
         }
         self.bat_path = ''.join((self.main_path, '/CommisionTool/temp/EnabeledPMMeasurement_', self.today, '.bat'))
-        f = open(os.path.join(self.main_path,'HTML_TEMP/DisabeledPMMeasurementEnbList.csv'), 'r')
+        f = open(os.path.join(self.main_path, 'HTML_TEMP/DisabeledPMMeasurementEnbList.csv'), 'r')
         f_csv = csv.reader(f)
         with open(self.bat_path, 'w') as f_em:
             for temp_log in f_csv:
                 if [temp_log[0], temp_log[5]] == [self.yesterday, 'Successfully']:
-                    if temp_log[2] == 'eSRVCC切换差小区':
+                    if temp_log[2] in ['eSRVCC切换差小区', 'Volte高掉话']:
                         cmd_type = '-deltafile '
                     else:
                         cmd_type = '-parameterfile '
                     temp_text = ''.join(('call commission.bat -ne ',
-                                        temp_log[4],
+                                         temp_log[4],
                                          ' -pw Nemuadmin:nemuuser ',
                                          cmd_type,
                                          temp_log[9],
@@ -95,10 +96,10 @@ class Main:
                                          '.log'))
                     if temp_log[2] not in self.enabledpmmeasurement_list:
                         self.enabledpmmeasurement_list[temp_log[2]] = []
+                        self.cmd_list[temp_log[2]] = []
                     if [temp_log[3], temp_log[4]] not in self.enabledpmmeasurement_list[temp_log[2]]:
                         self.enabledpmmeasurement_list[temp_log[2]].append([temp_log[3], temp_log[4]])
-
-                        self.cmd_list.append(temp_text)
+                        self.cmd_list[temp_log[2]].append(temp_text)
                         f_em.write(temp_text)
                         f_em.write('\n')
         f.close()
@@ -113,10 +114,12 @@ class Main:
         # 修改运行文件夹为批处理文件所在目录，并执行批处理程序；
         os.chdir(''.join((self.main_path, '/CommisionTool')))
         # subprocess.call(self.bat_path)
-        pool = ThreadPool(processes=10)
-        pool.map(self.run_call, self.cmd_list)
-        pool.close()
-        pool.join()
+        for temp_table in self.cmd_list:
+            print(temp_table)
+            pool = ThreadPool(processes=20)
+            pool.map(self.run_call, self.cmd_list[temp_table])
+            pool.close()
+            pool.join()
         print('>>> 测量激活完毕！')
 
     def write(self):
@@ -127,6 +130,7 @@ class Main:
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
             'top_volte_dldrop': 'Volte高丢包',
+            'top_volte_drop': 'Volte高掉话',
         }
         f_csv = ''.join((self.main_path, '/HTML_TEMP/EnabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):

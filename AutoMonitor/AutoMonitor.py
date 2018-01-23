@@ -17,7 +17,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 import xlrd
 import openpyxl
 import traceback
-
+os.environ['NLS_LANG'] = 'SIMPLIFIED CHINESE_CHINA.UTF8'
 ##############################################################################
 print("""
 --------------------------------
@@ -69,7 +69,8 @@ update log:
             关闭srvcc切换开关模式已修复当激活actGsmSrvccMeasOpt时关闭srvcc切换功能参数报错问题；
 2017-12-9 raw_monitor模块增加小区可用率检测；
 2017-12-9 raw_monitor模块增加volte掉话检测；
-
+2017-12-25 raw_monitor模块支持volte掉话超过门限后调整B2门限，让其更快切换到2G；
+2018-1-23 raw_monitor模块中的可以自定义启用或关闭各类监控报告；
 ''')
 
 print('\n')
@@ -213,6 +214,10 @@ class Getini:
             print(">>> timetype 设置异常，请检查！")
         self.alarm_sql = 'alarm'
 
+        self.config_raw_monitor_report = {}
+        for o in self.cf.options('raw_monitor_report'):
+            self.config_raw_monitor_report[o] = self.cf.get('raw_monitor_report', o)
+
         self.db = {}
         for j in self.cf.options('db'):
             j_child = self.cf.get('db', j).split(',')
@@ -284,10 +289,12 @@ class Db:
         except:
             print('无法连接数据库：', self.ip, ',请检查网络或数据库设置!')
             self.connectstate = 0
+            traceback.print_exc()
 
     def getpara(self, kpi_type):
         para_sql_list = {
             'top_srvcc': 'para_srvcc',
+            'top_volte_drop': 'para_srvcc',
         }
         enb_list_text_list_temp = list(dis_pm.disabledpmmeasurement_list[kpi_type].keys())
         enb_list_text_list = ''
@@ -365,6 +372,7 @@ class Db:
             self.dateget = self.cc.execute(sqltext)
         except:
             print('>>> 查询出错，请检查SQL脚本！！', sqlfullname)
+            traceback.print_exc()
 
     def displaydata(self, datatype='main'):
         def main():
@@ -972,175 +980,201 @@ class Report:
         html.body('h1', 'HI，最近15分钟存在KPI恶化明显小区，可能对整网指标影响较大，请尽快处理！')
 
         # 休眠小区，有随机接入申请，但是全部失败
-        db.getdata(ini.休眠小区, timetype='top', counter='PREAMBLE_REQ')
-        db.displaydata(datatype='休眠小区')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  接入异常小区')
-            html.table()
-            self.topcelln += 1
-            ini.subject_sleep = 1
-        if len(db.dbdata) != 0:
-            try:
-                html.write_top_cell('接入异常小区')
-            except:
-                pass
+        if ini.config_raw_monitor_report['active_sleep_cell_report'] == '1':
+            db.getdata(ini.休眠小区, timetype='top', counter='PREAMBLE_REQ')
+            db.displaydata(datatype='休眠小区')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  接入异常小区')
+                html.table()
+                self.topcelln += 1
+                ini.subject_sleep = 1
+            if len(db.dbdata) != 0:
+                try:
+                    html.write_top_cell('接入异常小区')
+                except:
+                    pass
 
         # 可用率异常小区
-        db.getdata(ini.可用率)
-        db.displaydata(datatype='可用率')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  可用率异常小区')
-            html.table()
-            self.topcelln += 1
-            ini.available_range = 1
+        if ini.config_raw_monitor_report['active_available_report'] == '1':
+            db.getdata(ini.可用率)
+            db.displaydata(datatype='可用率')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  可用率异常小区')
+                html.table()
+                self.topcelln += 1
+                ini.available_range = 1
 
-        # volte高掉话小区
-        db.getdata(
-            ini.top_kpi_sql,
-            timetype='top',
-            counter='QCI1掉线次数_监控_2',
-            threshold='1',
-            top_n='999'
-        )
-        db.displaydata(datatype='top_volte_drop')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  volte掉话')
-            html.table()
-            self.topcelln += 1
-            ini.volte_drop = 1
-            try:
-                html.write_top_cell('volte掉话')
-            except:
-                pass
+        if ini.config_raw_monitor_report['active_volte_drop_report'] == '1':
+            # volte高掉话小区
+            db.getdata(
+                ini.top_kpi_sql,
+                timetype='top',
+                counter='QCI1掉线次数_监控_1',
+                threshold=ini.config['volte_drop_num'],
+                top_n='999'
+            )
+            db.displaydata(datatype='top_volte_drop')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  volte掉话')
+
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_cell_raw_all_volte_drop'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_volte_drop'] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区volte掉话较多,'
+                                    '已尝试激活esrvcc切换开关（actSrvccToGsm）及调整B2门限!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+                html.table()
+                self.topcelln += 1
+                ini.volte_drop = 1
+                try:
+                    html.write_top_cell('volte掉话')
+                except:
+                    pass
 
         # esrvcc切换差小区
-        db.getdata(
-            ini.top_kpi_sql,
-            timetype='top',
-            counter='esrvcc切换失败次数ZB',
-            threshold='4',
-        )
-        db.displaydata(datatype='top_srvcc')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  esrvcc切换失败次数ZB')
+        if ini.config_raw_monitor_report['active_srvcc_report'] == '1':
+            db.getdata(
+                ini.top_kpi_sql,
+                timetype='top',
+                counter='esrvcc切换失败次数ZB',
+                threshold=ini.config['top_srvcc_fail_num'],
+            )
+            db.displaydata(datatype='top_srvcc')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  esrvcc切换失败次数ZB')
 
-            # 保留TOP小区信息
-            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_srvcc'] == '1':
-                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
-                dis_pm.autodisabledpmmeasurementdata['top_srvcc'] = [temp_i[2] for temp_i in db.dbdata]
-                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区esrvcc切换失败较多,'
-                                '已尝试将esrvcc切换开关（actSrvccToGsm）关闭!!!</b></font>')
-                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_srvcc'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_srvcc'] = [temp_i[2] for temp_i in db.dbdata]
+                    if ini.config['top_srvcc_type'] == 'b2':
+                        html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区esrvcc切换失败较多,'
+                                        '已尝试调整B2门限，减慢其向2G切换!!!</b></font>')
+                    else:
+                        html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区esrvcc切换失败较多,'
+                                        '已尝试将esrvcc切换开关（actSrvccToGsm）关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复！<<<</b></font>')
 
-            html.table()
-            self.topcelln += 1
-            ini.subject_srvcc = 1
-            try:
-                html.write_top_cell('esrvcc切换差小区')
-            except:
-                pass
+                html.table()
+                self.topcelln += 1
+                ini.subject_srvcc = 1
+                try:
+                    html.write_top_cell('esrvcc切换差小区')
+                except:
+                    pass
+
         # volte低接通小区
-        db.getdata(
-            ini.cell_raw_all_lowconnect, timetype='top', counter='qci1无线接通率')
-        db.displaydata(datatype='top_volte_connect')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  VOLTE低接通')
+        if ini.config_raw_monitor_report['active_volte_connect_report'] == '1':
+            db.getdata(
+                ini.cell_raw_all_lowconnect, timetype='top', counter='qci1无线接通率')
+            db.displaydata(datatype='top_volte_connect')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  VOLTE低接通')
 
-            # 保留TOP小区信息
-            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_volte_connect'] == '1':
-                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
-                dis_pm.autodisabledpmmeasurementdata['top_volte_connect'] = [temp_i[2] for temp_i in db.dbdata]
-                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte低接通小区,'
-                                '已尝试将测量开关（mtEPSBearer）关闭!!!</b></font>')
-                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_volte_connect'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_volte_connect'] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte低接通小区,'
+                                    '已尝试将测量开关（mtEPSBearer）关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
 
-            html.table()
-            self.topcelln += 1
-            ini.subject_lowconnect = 1
-            try:
-                html.write_top_cell('volte接通差小区')
-            except:
-                pass
+                html.table()
+                self.topcelln += 1
+                ini.subject_lowconnect = 1
+                try:
+                    html.write_top_cell('volte接通差小区')
+                except:
+                    pass
 
         # 高拥塞小区
-        db.getdata(
-            ini.top_kpi_sql, timetype='top', counter='拥塞次数', threshold=500)
-        db.displaydata(datatype='overcrowding')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  高拥塞小区')
+        if ini.config_raw_monitor_report['active_overcrowding_report'] == '1':
+            db.getdata(
+                ini.top_kpi_sql, timetype='top', counter='拥塞次数', threshold=ini.config['overcrowding_num'])
+            db.displaydata(datatype='overcrowding')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  高拥塞小区')
 
-            # 保留高拥塞小区信息
-            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_overcrowding'] == '1':
-                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
-                dis_pm.autodisabledpmmeasurementdata['overcrowding'] = [temp_i[2] for temp_i in db.dbdata]
-                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区因拥塞对现网指标影响较大，'
-                                '已尝试将RRC测量上报开关关闭!!!</b></font>')
-                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
-            html.table()
-            self.topcelln += 1
-            ini.subject_overcrowding = 1
-            try:
-                html.write_top_cell('高拥塞小区')
-            except:
-                pass
+                # 保留高拥塞小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_overcrowding'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['overcrowding'] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区因拥塞对现网指标影响较大，'
+                                    '已尝试将RRC测量上报开关关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+                html.table()
+                self.topcelln += 1
+                ini.subject_overcrowding = 1
+                try:
+                    html.write_top_cell('高拥塞小区')
+                except:
+                    pass
 
         # QCI1下行丢包率
-        db.getdata(
-            ini.cell_raw_all_dl_low_vo_loss, timetype='top', counter='QCI1下行丢包率')
-        db.displaydata(datatype='top_volte_dldrop')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  QCI1丢包率')
+        if ini.config_raw_monitor_report['active_volte_packet_loss_report'] == '1':
+            db.getdata(
+                ini.cell_raw_all_dl_low_vo_loss, timetype='top', counter='QCI1下行丢包率')
+            db.displaydata(datatype='top_volte_dldrop')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  QCI1丢包率')
 
-            # 保留TOP小区信息
-            if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_cell_raw_all_dl_low_vo_loss'] == '1':
-                dis_pm.autodisabledpmmeasurementdata['mark'] = 1
-                dis_pm.autodisabledpmmeasurementdata['top_volte_dldrop'] = [temp_i[2] for temp_i in db.dbdata]
-                html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte高丢包,'
-                                '已尝试将测量开关（mtQoS）关闭!!!</b></font>')
-                html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_cell_raw_all_dl_low_vo_loss'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_volte_dldrop'] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte高丢包,'
+                                    '已尝试将测量开关（mtQoS）关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
 
-            html.table()
-            self.topcelln += 1
-            ini.subject_dl_low_vo_loss = 1
-            try:
-                html.write_top_cell('QCI1下行丢包率')
-            except:
-                pass
+                html.table()
+                self.topcelln += 1
+                ini.subject_dl_low_vo_loss = 1
+                try:
+                    html.write_top_cell('QCI1下行丢包率')
+                except:
+                    pass
 
         # GPS故障小区
-        db.getdata(ini.alarm_sql)
-        db.displaydata(datatype='alarm')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  GPS故障基站，可能造成大面积干扰，请尽快处理！')
-            html.table()
-            self.topcelln += 1
-            ini.subject_gps = 1
+        if ini.config_raw_monitor_report['active_gps_alarm_report'] == '1':
+            db.getdata(ini.alarm_sql)
+            db.displaydata(datatype='alarm')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  GPS故障基站，可能造成大面积干扰，请尽快处理！')
+                html.table()
+                self.topcelln += 1
+                ini.subject_gps = 1
 
         # 休眠小区
-        db.getdata(ini.sleepingcell_sql)
-        db.displaydata(datatype='sleepingcell')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  休眠小区')
-            html.table()
-            self.topcelln += 1
-            ini.subject_sleep = 1
+        if ini.config_raw_monitor_report['active_sleep_cell_1_report'] == '1':
+            db.getdata(ini.sleepingcell_sql)
+            db.displaydata(datatype='sleepingcell')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  休眠小区')
+                html.table()
+                self.topcelln += 1
+                ini.subject_sleep = 1
+
         # 休眠及零流量小区
-        db.getdata(ini.sleep_cell_16a_raw)
-        db.displaydata(datatype='sleep_cell_16a')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  休眠及零流量小区')
-            html.table()
-            self.topcelln += 1
-            ini.subject_sleep = 1
+        if ini.config_raw_monitor_report['active_sleep_cell_2_report'] == '1':
+            db.getdata(ini.sleep_cell_16a_raw)
+            db.displaydata(datatype='sleep_cell_16a')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  休眠及零流量小区')
+                html.table()
+                self.topcelln += 1
+                ini.subject_sleep = 1
 
         # 最大激活用户数检测
-        db.getdata(ini.maxue, timetype='top')
-        db.displaydata(datatype='maxue')
-        if len(db.dbdata) != 0:
-            html.body('h2', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限，请尽快扩容！')
-            html.table()
-            self.topcelln += 1
-            ini.subject_maxue = 1
+        if ini.config_raw_monitor_report['active_maxue_report'] == '1':
+            db.getdata(ini.maxue, timetype='top')
+            db.displaydata(datatype='maxue')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  最大激活用户数检测：最近一个时段最大激活用户数超过配置门限，请尽快扩容！')
+                html.table()
+                self.topcelln += 1
+                ini.subject_maxue = 1
 
         # html结束
         html.foot()
@@ -1171,11 +1205,19 @@ class Autodisablepm:
             'top_srvcc': [],
             'top_volte_connect': [],
             'top_volte_dldrop': [],
+            'top_volte_drop': [],
         }
-        self.para_value_list = {'top_srvcc': {}}
-        #每个基站生成对应此xml
+        self.para_value_list = {
+            'top_srvcc': {},
+            'top_volte_drop': {},
+        }
+        # 每个基站生成对应此xml
         self.cmd_xml_name_list = {
             'top_srvcc': {
+                'up': {},
+                'bu': {}
+            },
+            'top_volte_drop': {
                 'up': {},
                 'bu': {}
             }
@@ -1189,12 +1231,22 @@ class Autodisablepm:
             'top_srvcc': {},
             'top_volte_connect': {},
             'top_volte_dldrop': {},
+            'top_volte_drop': {},
+        }
+        # 仅检查未满足调整基站列表
+        self.disabledpmmeasurement_list_pop = {
+            'overcrowding': [],
+            'top_srvcc': [],
+            'top_volte_connect': [],
+            'top_volte_dldrop': [],
+            'top_volte_drop': [],
         }
         top_name_tran = {
             'overcrowding': '拥塞',
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
             'top_volte_dldrop': 'Volte高丢包',
+            'top_volte_drop': 'Volte高掉话',
         }
         for temp_table in self.autodisabledpmmeasurementdata:
             if temp_table != 'mark':
@@ -1256,28 +1308,100 @@ class Autodisablepm:
             ))
         # 对应基站生成对应的参数修改xml
         if kpi_type == 'top_srvcc':
+            # 生成备份文件
+            for temp_enbid in self.disabledpmmeasurement_list[kpi_type]:
+                temp_xml_path_name_bu = os.path.join(
+                    ini.path,
+                    'CommisionTool',
+                    self.cmd_xml_name_list[kpi_type]['bu'][temp_enbid]
+                )
+                f_bu = open(temp_xml_path_name_bu, 'w')
+                f_bu.write('<raml xmlns="raml21.xsd" version="2.1">\n')
+                f_bu.write('<cmData id="3221225472" scope="all" type="plan">\n')
+
+                for temp_cellid in self.para_value_list[kpi_type][temp_enbid]:
+                    if self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['ACTGSMSRVCCMEASOPT'] == 1:
+                        temp_object = ''.join((
+                            '<managedObject class="LNCEL" version="',
+                            self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
+                            '" distName="MRBTS-',
+                            temp_enbid,
+                            '/LNBTS-',
+                            temp_enbid,
+                            '/LNCEL-',
+                            temp_cellid.split('_')[1],
+                            '" operation="update">\n'
+                        ))
+                        f_bu.write(temp_object)
+                        f_bu.write('<p name="actGsmSrvccMeasOpt">true</p>\n')
+                        f_bu.write('</managedObject>\n')
+                temp_object = ''.join((
+                    '<managedObject class="LNBTS" version="',
+                    self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
+                    '" distName="MRBTS-',
+                    temp_enbid,
+                    '/LNBTS-',
+                    temp_enbid,
+                    '" operation="update">\n'
+                ))
+                f_bu.write(temp_object)
+                f_bu.write('<p name="actSrvccToGsm">true</p>\n')
+                f_bu.write('</managedObject>\n')
+
+                for temp_cellid in self.para_value_list[kpi_type][temp_enbid]:
+                    for temp_id in self.para_value_list[kpi_type][temp_enbid][temp_cellid]:
+                        temp_object = ''.join((
+                            '<managedObject class="LNHOG" version="',
+                            temp_id['VERSION'],
+                            '" distName="MRBTS-',
+                            temp_enbid,
+                            '/LNBTS-',
+                            temp_enbid,
+                            '/LNCEL-',
+                            temp_cellid.split('_')[1],
+                            '/LNHOG-',
+                            temp_id['LNHOG_ID'],
+                            '" operation="update">\n'
+                        ))
+                        f_bu.write(temp_object)
+                        if temp_id['B2THRESHOLD1GERANQCI1'] is None:
+                            f_bu.write(
+                                '<p name="b2Threshold1GERANQci1"></p>\n'
+                            )
+                        else:
+                            f_bu.write(
+                                '<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(
+                                    int(temp_id['B2THRESHOLD1GERANQCI1']) + 140
+                                )
+                            )
+                        if temp_id['B2THRESHOLD2RSSIGERANQCI1'] is None:
+                            f_bu.write(
+                                '<p name="b2Threshold2RssiGERANQci1"></p>\n'
+                            )
+                        else:
+                            f_bu.write(
+                                '<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(
+                                    int(temp_id['B2THRESHOLD2RSSIGERANQCI1']) + 110
+                                )
+                            )
+                        f_bu.write('</managedObject>\n')
+                f_bu.write('</cmData>\n')
+                f_bu.write('</raml>\n')
+                f_bu.close()
+
+            # 生成调整文件
             for temp_enbid in self.disabledpmmeasurement_list[kpi_type]:
                 temp_xml_path_name = os.path.join(
                     ini.path,
                     'CommisionTool',
                     self.cmd_xml_name_list[kpi_type]['up'][temp_enbid]
                 )
-                temp_xml_path_name_bu = os.path.join(
-                    ini.path,
-                    'CommisionTool',
-                    self.cmd_xml_name_list[kpi_type]['bu'][temp_enbid]
-                )
                 f = open(temp_xml_path_name, 'w')
-                f_bu = open(temp_xml_path_name_bu, 'w')
                 f.write('<raml xmlns="raml21.xsd" version="2.1">\n')
                 f.write('<cmData id="3221225472" scope="all" type="plan">\n')
-                f_bu.write('<raml xmlns="raml21.xsd" version="2.1">\n')
-                f_bu.write('<cmData id="3221225472" scope="all" type="plan">\n')
                 if ini.config['top_srvcc_type'] == 'disactive':
                     for temp_cellid in self.para_value_list[kpi_type][temp_enbid]:
                         if self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['ACTGSMSRVCCMEASOPT'] == 1:
-                    # for temp_cellid in self.disabledpmmeasurement_list[kpi_type][temp_enbid][1]:
-                    #     if self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['ACTGSMSRVCCMEASOPT'] == 1:
                             temp_object = ''.join((
                                 '<managedObject class="LNCEL" version="',
                                 self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
@@ -1292,9 +1416,6 @@ class Autodisablepm:
                             f.write(temp_object)
                             f.write('<p name="actGsmSrvccMeasOpt">false</p>\n')
                             f.write('</managedObject>\n')
-                            f_bu.write(temp_object)
-                            f_bu.write('<p name="actGsmSrvccMeasOpt">true</p>\n')
-                            f_bu.write('</managedObject>\n')
                     temp_object = ''.join((
                         '<managedObject class="LNBTS" version="',
                         self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
@@ -1307,23 +1428,21 @@ class Autodisablepm:
                     f.write(temp_object)
                     f.write('<p name="actSrvccToGsm">false</p>\n')
                     f.write('</managedObject>\n')
-                    f_bu.write(temp_object)
-                    f_bu.write('<p name="actSrvccToGsm">true</p>\n')
-                    f_bu.write('</managedObject>\n')
                 elif ini.config['top_srvcc_type'] == 'b2':
-                    print(self.disabledpmmeasurement_list[kpi_type][temp_enbid])
                     for temp_cellid in self.disabledpmmeasurement_list[kpi_type][temp_enbid][1]:
-                        print(self.para_value_list[kpi_type][temp_enbid][temp_cellid])
                         for temp_id in self.para_value_list[kpi_type][temp_enbid][temp_cellid]:
                             if temp_id['THRESHOLD4'] >= int(ini.config['b2Threshold1GERANQci1'.lower()]):
                                 b2threshold1geranqci1 = int(temp_id['THRESHOLD4']) + 1 + 140
                             else:
                                 b2threshold1geranqci1 = int(ini.config['b2Threshold1GERANQci1'.lower()]) + 140
-                            if temp_id['B2THRESHOLD2RSSIGERANQCI1'] >= int(ini.config[
-                                                                               'b2Threshold2RssiGERANQci1_1'.lower()]):
+                            if temp_id['B2THRESHOLD2RSSIGERANQCI1'] is None:
                                 b2threshold2rssigeranqci1 = int(ini.config['b2Threshold2RssiGERANQci1_2'.lower()]) + 110
                             else:
-                                b2threshold2rssigeranqci1 = int(ini.config['b2Threshold2RssiGERANQci1_1'.lower()]) + 110
+                                if temp_id['B2THRESHOLD2RSSIGERANQCI1'] >= int(ini.config[
+                                                                                   'b2Threshold2RssiGERANQci1_1'.lower()]):
+                                    b2threshold2rssigeranqci1 = int(ini.config['b2Threshold2RssiGERANQci1_2'.lower()]) + 110
+                                else:
+                                    b2threshold2rssigeranqci1 = int(ini.config['b2Threshold2RssiGERANQci1_1'.lower()]) + 110
 
                             temp_object = ''.join((
                                 '<managedObject class="LNHOG" version="',
@@ -1342,24 +1461,132 @@ class Autodisablepm:
                             f.write('<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(b2threshold1geranqci1))
                             f.write('<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(b2threshold2rssigeranqci1))
                             f.write('</managedObject>\n')
-                            f_bu.write(temp_object)
-                            f_bu.write(
-                                '<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(temp_id[
-                                                                                       'B2THRESHOLD1GERANQCI1'
-                                                                                   ] + 140)
-                            )
-                            f_bu.write(
-                                '<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(temp_id[
-                                                                                           'B2THRESHOLD2RSSIGERANQCI1'
-                                                                                       ] + 110)
-                            )
-                            f_bu.write('</managedObject>\n')
                 f.write('</cmData>\n')
                 f.write('</raml>\n')
+                f.close()
+        elif kpi_type == 'top_volte_drop':
+            for temp_enbid in self.disabledpmmeasurement_list[kpi_type]:
+                # 生成备份文件
+                temp_xml_path_name_bu = os.path.join(
+                    ini.path,
+                    'CommisionTool',
+                    self.cmd_xml_name_list[kpi_type]['bu'][temp_enbid]
+                )
+                f_bu = open(temp_xml_path_name_bu, 'w')
+                f_bu.write('<raml xmlns="raml21.xsd" version="2.1">\n')
+                f_bu.write('<cmData id="3221225472" scope="all" type="plan">\n')
+                for temp_cellid in self.para_value_list[kpi_type][temp_enbid]:
+                    for temp_id in self.para_value_list[kpi_type][temp_enbid][temp_cellid]:
+                        temp_object = ''.join((
+                            '<managedObject class="LNHOG" version="',
+                            temp_id['VERSION'],
+                            '" distName="MRBTS-',
+                            temp_enbid,
+                            '/LNBTS-',
+                            temp_enbid,
+                            '/LNCEL-',
+                            temp_cellid.split('_')[1],
+                            '/LNHOG-',
+                            temp_id['LNHOG_ID'],
+                            '" operation="update">\n'
+                        ))
+                        f_bu.write(temp_object)
+                        if temp_id['B2THRESHOLD1GERANQCI1'] is None:
+                            f_bu.write(
+                                '<p name="b2Threshold1GERANQci1"></p>\n'
+                            )
+                        else:
+                            f_bu.write(
+                                '<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(
+                                    int(temp_id['B2THRESHOLD1GERANQCI1']) + 140
+                                )
+                            )
+                        if temp_id['B2THRESHOLD2RSSIGERANQCI1'] is None:
+                            f_bu.write(
+                                '<p name="b2Threshold2RssiGERANQci1"></p>\n'
+                            )
+                        else:
+                            f_bu.write(
+                                '<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(
+                                    int(temp_id['B2THRESHOLD2RSSIGERANQCI1']) + 110
+                                )
+                            )
+                        f_bu.write('</managedObject>\n')
                 f_bu.write('</cmData>\n')
                 f_bu.write('</raml>\n')
-                f.close()
                 f_bu.close()
+
+                # 生成调整文件
+                temp_xml_path_name = os.path.join(
+                    ini.path,
+                    'CommisionTool',
+                    self.cmd_xml_name_list[kpi_type]['up'][temp_enbid]
+                )
+                f = open(temp_xml_path_name, 'w')
+                f.write('<raml xmlns="raml21.xsd" version="2.1">\n')
+                f.write('<cmData id="3221225472" scope="all" type="plan">\n')
+                temp_top_volte_drop_b2_mark = 0
+                for temp_cellid in self.disabledpmmeasurement_list[kpi_type][temp_enbid][1]:
+                    if self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['ACTSRVCCTOGSM'] == 0:
+                        temp_top_volte_drop_b2_mark = 1
+                        temp_object = ''.join((
+                            '<managedObject class="LNBTS" version="',
+                            self.para_value_list[kpi_type][temp_enbid][temp_cellid][0]['VERSION'],
+                            '" distName="MRBTS-',
+                            temp_enbid,
+                            '/LNBTS-',
+                            temp_enbid,
+                            '" operation="update">\n'
+                        ))
+                        f.write(temp_object)
+                        f.write('<p name="actSrvccToGsm">true</p>\n')
+                        f.write('</managedObject>\n')
+                        break
+                    else:
+                        temp_srvcc_b2threshold1geranqci1_mark = 0
+                        temp_srvcc_b2threshold2rssigeranqci1_mark = 0
+                        for temp_id in self.para_value_list[kpi_type][temp_enbid][temp_cellid]:
+                            if temp_id['B2THRESHOLD1GERANQCI1'] is None:
+                                b2threshold1geranqci1 = int(ini.config['drop_b2Threshold1GERANQci1'.lower()]) + 140
+                                temp_srvcc_b2threshold1geranqci1_mark = 1
+                            else:
+                                if temp_id['B2THRESHOLD1GERANQCI1'] < int(ini.config['drop_b2Threshold1GERANQci1'.lower()]):
+                                    b2threshold1geranqci1 = int(ini.config['drop_b2Threshold1GERANQci1'.lower()]) + 140
+                                    temp_srvcc_b2threshold1geranqci1_mark = 1
+                            if temp_id['B2THRESHOLD2RSSIGERANQCI1'] is None:
+                                b2threshold2rssigeranqci1 = int(ini.config['drop_b2Threshold2RssiGERANQci1'.lower()]) + 110
+                                temp_srvcc_b2threshold2rssigeranqci1_mark = 1
+                            else:
+                                if temp_id['B2THRESHOLD2RSSIGERANQCI1'] > int(ini.config['drop_b2Threshold2RssiGERANQci1'.lower()]):
+                                    b2threshold2rssigeranqci1 = int(ini.config['drop_b2Threshold2RssiGERANQci1'.lower()]) + 110
+                                    temp_srvcc_b2threshold2rssigeranqci1_mark = 1
+                            if temp_srvcc_b2threshold1geranqci1_mark + temp_srvcc_b2threshold2rssigeranqci1_mark != 0:
+                                temp_top_volte_drop_b2_mark = 1
+                                temp_object = ''.join((
+                                    '<managedObject class="LNHOG" version="',
+                                    temp_id['VERSION'],
+                                    '" distName="MRBTS-',
+                                    temp_enbid,
+                                    '/LNBTS-',
+                                    temp_enbid,
+                                    '/LNCEL-',
+                                    temp_cellid.split('_')[1],
+                                    '/LNHOG-',
+                                    temp_id['LNHOG_ID'],
+                                    '" operation="update">\n'
+                                ))
+                                f.write(temp_object)
+                                if temp_srvcc_b2threshold1geranqci1_mark == 1:
+                                    f.write('<p name="b2Threshold1GERANQci1">{0}</p>\n'.format(b2threshold1geranqci1))
+                                if temp_srvcc_b2threshold2rssigeranqci1_mark == 1:
+                                    f.write('<p name="b2Threshold2RssiGERANQci1">{0}</p>\n'.format(b2threshold2rssigeranqci1))
+                                f.write('</managedObject>\n')
+                f.write('</cmData>\n')
+                f.write('</raml>\n')
+                f.close()
+                if temp_top_volte_drop_b2_mark == 0:
+                    self.disabledpmmeasurement_list_pop[kpi_type].append(temp_enbid)
+
 
     def creat_bat(self):
         # 生成命令列表
@@ -1385,56 +1612,57 @@ class Autodisablepm:
         f_dm_bu = open(self.bat_path_bu, 'w')
         for temp_table in self.disabledpmmeasurement_list:
             if temp_table != 'mark':
-                if temp_table == 'top_srvcc' and self.disabledpmmeasurement_list[temp_table] != {}:
+                if temp_table in ['top_srvcc', 'top_volte_drop'] and self.disabledpmmeasurement_list[temp_table] != {}:
                     self.para_format(db.getpara(temp_table), temp_table)
                 for temp_enbid in self.disabledpmmeasurement_list[temp_table]:
-                    if temp_table == 'top_srvcc':
-                        temp_text = ''.join(('call commission.bat -ne ',
-                                            self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
-                                             ' -pw Nemuadmin:nemuuser -deltafile ',
-                                             self.cmd_xml_name_list[temp_table]['up'][temp_enbid],
-                                             ' |tee ./temp/',
-                                             temp_table,
-                                             '-',
-                                             temp_enbid,
-                                             '-',
-                                             ini.htmlname,
-                                             '.log'))
-                        temp_text_bu = ''.join(('call commission.bat -ne ',
+                    if temp_enbid not in self.disabledpmmeasurement_list_pop[temp_table]:
+                        if temp_table in ['top_srvcc', 'top_volte_drop']:
+                            temp_text = ''.join(('call commission.bat -ne ',
                                                 self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
-                                                ' -pw Nemuadmin:nemuuser -deltafile ',
-                                                self.cmd_xml_name_list[temp_table]['bu'][temp_enbid],
-                                                ' |tee ./temp/',
-                                                temp_table,
-                                                '-',
-                                                temp_enbid,
-                                                '-',
-                                                ini.htmlname,
-                                                '_bu.log'))
-                    else:
-                        temp_text = ''.join(('call commission.bat -ne ',
-                                            self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
-                                             ' -pw Nemuadmin:nemuuser -parameterfile ',
-                                             self.bat_file_list[temp_table],
-                                             ' |tee ./temp/',
-                                             temp_table,
-                                             '-',
-                                             temp_enbid,
-                                             '.log'))
-                        temp_text_bu = ''.join(('call commission.bat -ne ',
+                                                 ' -pw Nemuadmin:nemuuser -deltafile ',
+                                                 self.cmd_xml_name_list[temp_table]['up'][temp_enbid],
+                                                 ' |tee ./temp/',
+                                                 temp_table,
+                                                 '-',
+                                                 temp_enbid,
+                                                 '-',
+                                                 ini.htmlname,
+                                                 '.log'))
+                            temp_text_bu = ''.join(('call commission.bat -ne ',
+                                                    self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
+                                                    ' -pw Nemuadmin:nemuuser -deltafile ',
+                                                    self.cmd_xml_name_list[temp_table]['bu'][temp_enbid],
+                                                    ' |tee ./temp/',
+                                                    temp_table,
+                                                    '-',
+                                                    temp_enbid,
+                                                    '-',
+                                                    ini.htmlname,
+                                                    '_bu.log'))
+                        else:
+                            temp_text = ''.join(('call commission.bat -ne ',
                                                 self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
-                                                ' -pw Nemuadmin:nemuuser -parameterfile ',
-                                                self.bat_file_list_bu[temp_table],
-                                                ' |tee ./temp/',
-                                                temp_table,
-                                                '-',
-                                                temp_enbid,
-                                                '_bu.log'))
-                    self.cmd_list.append(temp_text)
-                    f_dm.write(temp_text)
-                    f_dm.write('\n')
-                    f_dm_bu.write(temp_text_bu)
-                    f_dm_bu.write('\n')
+                                                 ' -pw Nemuadmin:nemuuser -parameterfile ',
+                                                 self.bat_file_list[temp_table],
+                                                 ' |tee ./temp/',
+                                                 temp_table,
+                                                 '-',
+                                                 temp_enbid,
+                                                 '.log'))
+                            temp_text_bu = ''.join(('call commission.bat -ne ',
+                                                    self.disabledpmmeasurement_list[temp_table][temp_enbid][0],
+                                                    ' -pw Nemuadmin:nemuuser -parameterfile ',
+                                                    self.bat_file_list_bu[temp_table],
+                                                    ' |tee ./temp/',
+                                                    temp_table,
+                                                    '-',
+                                                    temp_enbid,
+                                                    '_bu.log'))
+                        self.cmd_list.append(temp_text)
+                        f_dm.write(temp_text)
+                        f_dm.write('\n')
+                        f_dm_bu.write(temp_text_bu)
+                        f_dm_bu.write('\n')
         f_dm.close()
         f_dm_bu.close()
 
@@ -1457,6 +1685,7 @@ class Autodisablepm:
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
             'top_volte_dldrop': 'Volte高丢包',
+            'top_volte_drop': 'Volte高掉话',
         }
         f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
@@ -1478,7 +1707,7 @@ class Autodisablepm:
                         f_dml.write(',')
                         f_dml.write(str(self.disabledpmmeasurement_list[temp_table][temp_enbid][0]))
                         f_dml.write(',')
-                        if temp_table == 'top_srvcc':
+                        if temp_table in ['top_srvcc', 'top_volte_drop']:
                             log_path = ''.join((ini.path,
                                                 '/CommisionTool/temp/',
                                                 temp_table,
@@ -1529,7 +1758,9 @@ class Autodisablepm:
                             f_dml.write(',')
                         except:
                             f_dml.write(',')
-                        if temp_table == 'top_srvcc':
+                            f_dml.write(',')
+                            f_dml.write(',')
+                        if temp_table in ['top_srvcc', 'top_volte_drop']:
                             f_dml.write(self.cmd_xml_name_list[temp_table]['up'][temp_enbid])
                             f_dml.write(',')
                             f_dml.write(self.cmd_xml_name_list[temp_table]['bu'][temp_enbid])
@@ -1539,8 +1770,6 @@ class Autodisablepm:
                             f_dml.write(',')
                             f_dml.write(self.bat_file_list_bu[temp_table])
                             f_dml.write('\n')
-
-
 
         print('>>> 完成！请到 /HTML_TEMP/DisabeledPMMeasurementEnbList.csv 检查运行结果.')
 
@@ -1558,7 +1787,7 @@ if __name__ == '__main__':
             sys.exit()
 
         # 获取生成html文件名及邮件头名
-        ini.title = '_'.join((ini.db[db_child][0], ini.cf.get('email', 'subject'), ini.htmlname))
+        ini.title = '_'.join((db_child, ini.cf.get('email', 'subject'), ini.htmlname))
 
         db_report = Report()
 
@@ -1591,6 +1820,7 @@ if __name__ == '__main__':
                 email.sendemail()
                 email.smtpObj.close()
         except:
+            traceback.print_exc()
             pass
 
         print('\n')
