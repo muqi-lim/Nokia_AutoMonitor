@@ -72,6 +72,7 @@ update log:
 2017-12-25 raw_monitor模块支持volte掉话超过门限后调整B2门限，让其更快切换到2G；
 2018-1-23 raw_monitor模块中的可以自定义启用或关闭各类监控报告；
 2018-1-24 增加高流量小区监控通报；
+2018-1-25 config文件结构优化；
 ''')
 
 print('\n')
@@ -94,6 +95,10 @@ class Getini:
         self.cf.read(''.join((inipath, '/', inifile)), encoding='utf-8-SIG')
         self.cf_sql = configparser.ConfigParser()
         self.cf_sql.read(''.join((inipath, '/', 'config_sql.ini')), encoding='utf-8-SIG')
+        self.cf_email = configparser.ConfigParser()
+        self.cf_email.read(''.join((inipath, '/', 'config_email.ini')), encoding='utf-8-SIG')
+        self.cf_db = configparser.ConfigParser()
+        self.cf_db.read(''.join((inipath, '/', 'config_db.ini')), encoding='utf-8-SIG')
 
     def automonitor(self):
         self.main = {}
@@ -108,8 +113,8 @@ class Getini:
         self.subject_lowconnect = 0
         self.subject_dl_low_vo_loss = 0
         self.subject_highload = 0
-        for h in self.cf.options('main'):
-            self.main[h] = self.cf.get('main', h)
+        for h in self.cf_email.options('main'):
+            self.main[h] = self.cf_email.get('main', h)
 
         self.actemail = self.main['actemail']
 
@@ -119,17 +124,20 @@ class Getini:
 
         if self.main['actemail'] == '1':
             self.email = {}
-            for o in self.cf.options('email'):
+            for o in self.cf_email.options('email'):
                 if o != 'receivers':
-                    o_child = self.cf.get('email', o)
+                    o_child = self.cf_email.get('email', o)
                 else:
-                    o_child = self.cf.get('email', o).split(',')
+                    o_child = self.cf_email.get('email', o).split(',')
                 if o_child in ('', ['']):
                     print('>>> email 设置异常，请检查！')
                     sys.exit()
                 self.email[o] = o_child
 
         self.config = {}
+        for ii in self.cf.options('main'):
+            self.config[ii] = self.cf.get('main', ii)
+
         for i in self.cf.options('config'):
             self.config[i] = self.cf.get('config', i)
 
@@ -224,8 +232,8 @@ class Getini:
             self.config_raw_monitor_report[o] = self.cf.get('raw_monitor_report', o)
 
         self.db = {}
-        for j in self.cf.options('db'):
-            j_child = self.cf.get('db', j).split(',')
+        for j in self.cf_db.options('db'):
+            j_child = self.cf_db.get('db', j).split(',')
             if len(j_child) != 3:
                 print('>>> [db]设置异常，请检查！')
                 sys.exit()
@@ -1870,7 +1878,7 @@ if __name__ == '__main__':
             sys.exit()
 
         # 获取生成html文件名及邮件头名
-        ini.title = '_'.join((db_child, ini.cf.get('email', 'subject'), ini.htmlname))
+        ini.title = '_'.join((db_child, ini.cf_email.get('email', 'subject'), ini.htmlname))
         ini.email_title_sub = db_child
         db_report = Report()
 
