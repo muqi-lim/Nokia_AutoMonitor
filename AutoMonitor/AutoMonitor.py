@@ -71,6 +71,7 @@ update log:
 2017-12-9 raw_monitor模块增加volte掉话检测；
 2017-12-25 raw_monitor模块支持volte掉话超过门限后调整B2门限，让其更快切换到2G；
 2018-1-23 raw_monitor模块中的可以自定义启用或关闭各类监控报告；
+2018-1-24 增加高流量小区监控通报；
 ''')
 
 print('\n')
@@ -106,6 +107,7 @@ class Getini:
         self.subject_srvcc = 0
         self.subject_lowconnect = 0
         self.subject_dl_low_vo_loss = 0
+        self.subject_highload = 0
         for h in self.cf.options('main'):
             self.main[h] = self.cf.get('main', h)
 
@@ -155,6 +157,7 @@ class Getini:
             self.top_kpi_sql = 'top_kpi_day'
             self.sleepingcell_sql = 'sleepingcell'
             self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
+            self.高流量小区 = '高流量小区_day'
             self.htmlname = (datetime.date.today() - datetime.timedelta(days=1)
                              ).strftime('%Y%m%d')
             self.maxue = 'maxue_day'
@@ -176,6 +179,7 @@ class Getini:
             self.top_kpi_sql = 'top_kpi_hour'
             self.sleepingcell_sql = 'sleepingcell'
             self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
+            self.高流量小区 = '高流量小区_hour'
             self.htmlname = datetime.datetime.now().strftime('%Y%m%d%H')
             self.maxue = 'maxue_hour'
             self.cell_hour_all_lowconnect = 'cell_hour_all_lowconnect'
@@ -204,16 +208,17 @@ class Getini:
             self.sleep_cell_16a_hour = 'sleep_cell_16a_hour'
             self.maxue = 'maxue_raw'
             self.cell_raw_all_lowconnect = 'cell_raw_all_lowconnect'
+            self.cell_raw_all_lowconnect_1 = 'cell_raw_all_lowconnect_1'
             self.cell_raw_all_dl_low_vo_loss = 'cell_raw_all_dl_low_vo_loss'
             self.休眠小区 = '休眠小区'
             self.可用率 = '可用率'
+            self.高流量小区 = '高流量小区_raw'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
         else:
             print(">>> timetype 设置异常，请检查！")
         self.alarm_sql = 'alarm'
-
         self.config_raw_monitor_report = {}
         for o in self.cf.options('raw_monitor_report'):
             self.config_raw_monitor_report[o] = self.cf.get('raw_monitor_report', o)
@@ -558,6 +563,15 @@ class Db:
                     sys.exit()
                 self.kpi_dict[n.lower()] = n_child
 
+        def 高流量小区():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('高流量小区'):
+                n_child = ini.cf_sql.get('高流量小区', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
                         'top_qci1connect': top_qci1connect,
@@ -579,6 +593,7 @@ class Db:
                         'maxue': maxue,
                         '休眠小区': 休眠小区,
                         '可用率': 可用率,
+                        '高流量小区': 高流量小区,
                         }
 
         datatypelist[datatype]()
@@ -614,7 +629,7 @@ class Email:
     def sendemail(self):
         # self.message = MIMEText(self.maintext, 'plain', 'utf-8')
         self.message = MIMEText(self.maintext, 'html', 'utf-8')
-        temp_subject = db.ip + '-'
+        temp_subject = ini.email_title_sub + '-'
         if ini.config['timetype'] == 'raw_monitor':
             if ini.subject_sleep == 1:
                 temp_subject += '【接入异常】'
@@ -634,6 +649,8 @@ class Email:
                 temp_subject += '【干扰】'
             if ini.subject_maxue == 1:
                 temp_subject += '【maxue】'
+            if ini.subject_highload == 1:
+                temp_subject += '【高流量】'
         self.message['Subject'] = temp_subject + ini.subject
         self.message['From'] = ini.email['mail_user']
         if len(ini.email['receivers']) > 1:
@@ -890,6 +907,15 @@ class Report:
             html.table()
             self.topcelln += 1
 
+        # 高流量小区
+        db.getdata(
+            ini.高流量小区, timetype='top', counter='高流量小区', top_n='100')
+        db.displaydata(datatype='高流量小区')
+        if len(db.dbdata) != 0:
+            html.body('h3', '    ◎ 高流量小区(当天累计)')
+            html.table()
+            self.topcelln += 1
+
         # qci1_erab建立成功率
         db.getdata(
             ini.top_volte_sql, timetype='top', counter='qci1_erab建立失败次数')
@@ -1004,8 +1030,8 @@ class Report:
                 self.topcelln += 1
                 ini.available_range = 1
 
+        # volte高掉话小区
         if ini.config_raw_monitor_report['active_volte_drop_report'] == '1':
-            # volte高掉话小区
             db.getdata(
                 ini.top_kpi_sql,
                 timetype='top',
@@ -1065,13 +1091,13 @@ class Report:
                 except:
                     pass
 
-        # volte低接通小区
+        # volte低接通小区,小于1erl小区监控
         if ini.config_raw_monitor_report['active_volte_connect_report'] == '1':
             db.getdata(
                 ini.cell_raw_all_lowconnect, timetype='top', counter='qci1无线接通率')
             db.displaydata(datatype='top_volte_connect')
             if len(db.dbdata) != 0:
-                html.body('h2', '   ◎  VOLTE低接通')
+                html.body('h2', '   ◎  VOLTE低接通（小于1erl小区）')
 
                 # 保留TOP小区信息
                 if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_top_volte_connect'] == '1':
@@ -1086,6 +1112,32 @@ class Report:
                 ini.subject_lowconnect = 1
                 try:
                     html.write_top_cell('volte接通差小区')
+                except:
+                    pass
+
+        # volte低接通小区，大于1erl小区监控
+        if ini.config_raw_monitor_report['active_volte_connect_1_report'] == '1':
+            db.getdata(
+                ini.cell_raw_all_lowconnect_1, timetype='top', counter='qci1无线接通率')
+            db.displaydata(datatype='top_volte_connect')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  VOLTE低接通（大于1erl小区）')
+
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config[
+                    'enable_top_volte_connect_1'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_volte_connect_1'] = [temp_i[2] for temp_i in
+                                                                                 db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte低接通小区,'
+                                    '已尝试将测量开关（mtUEstate）关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+                html.table()
+                self.topcelln += 1
+                ini.subject_lowconnect = 1
+                try:
+                    html.write_top_cell('volte接通差小区_1')
                 except:
                     pass
 
@@ -1176,6 +1228,30 @@ class Report:
                 self.topcelln += 1
                 ini.subject_maxue = 1
 
+        # 高流量小区
+        if ini.config_raw_monitor_report['active_highload_report'] == '1':
+            db.getdata(
+                ini.高流量小区, timetype='top', counter='高流量小区')
+            db.displaydata(datatype='高流量小区')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  高流量小区')
+
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config[
+                    'enable_highload'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['highload'] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能成为高流量小区！</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理！<<<</b></font>')
+
+                html.table()
+                self.topcelln += 1
+                ini.subject_highload = 1
+                try:
+                    html.write_top_cell('高流量小区')
+                except:
+                    pass
+
         # html结束
         html.foot()
         # 生成HTML文件
@@ -1204,6 +1280,7 @@ class Autodisablepm:
             'overcrowding': [],
             'top_srvcc': [],
             'top_volte_connect': [],
+            'top_volte_connect_1': [],
             'top_volte_dldrop': [],
             'top_volte_drop': [],
         }
@@ -1230,6 +1307,7 @@ class Autodisablepm:
             'overcrowding': {},
             'top_srvcc': {},
             'top_volte_connect': {},
+            'top_volte_connect_1': {},
             'top_volte_dldrop': {},
             'top_volte_drop': {},
         }
@@ -1238,6 +1316,7 @@ class Autodisablepm:
             'overcrowding': [],
             'top_srvcc': [],
             'top_volte_connect': [],
+            'top_volte_connect_1': [],
             'top_volte_dldrop': [],
             'top_volte_drop': [],
         }
@@ -1245,6 +1324,7 @@ class Autodisablepm:
             'overcrowding': '拥塞',
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
+            'top_volte_connect_1': 'Volte低接通小区_1',
             'top_volte_dldrop': 'Volte高丢包',
             'top_volte_drop': 'Volte高掉话',
         }
@@ -1597,6 +1677,7 @@ class Autodisablepm:
             'top_srvcc': {
             },
             'top_volte_connect': 'disabled_mtEPSBearer.xml',
+            'top_volte_connect_1': 'disabled_mtUEstate.xml',
             'top_volte_dldrop': 'disabled_mtQoS.xml',
         }
         self.bat_file_list_bu = {
@@ -1604,6 +1685,7 @@ class Autodisablepm:
             'top_srvcc': {
             },
             'top_volte_connect': 'enabled_mtEPSBearer.xml',
+            'top_volte_connect_1': 'enabled_mtUEstate.xml',
             'top_volte_dldrop': 'enabled_mtQoS.xml',
         }
         self.bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
@@ -1684,6 +1766,7 @@ class Autodisablepm:
             'overcrowding': '拥塞',
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
+            'top_volte_connect_1': 'Volte低接通小区_1',
             'top_volte_dldrop': 'Volte高丢包',
             'top_volte_drop': 'Volte高掉话',
         }
@@ -1788,7 +1871,7 @@ if __name__ == '__main__':
 
         # 获取生成html文件名及邮件头名
         ini.title = '_'.join((db_child, ini.cf.get('email', 'subject'), ini.htmlname))
-
+        ini.email_title_sub = db_child
         db_report = Report()
 
         report_type = {'day': db_report.day_hour_report,
