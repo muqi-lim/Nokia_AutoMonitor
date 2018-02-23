@@ -73,6 +73,9 @@ update log:
 2018-1-23 raw_monitor模块中的可以自定义启用或关闭各类监控报告；
 2018-1-24 增加高流量小区监控通报；
 2018-1-25 config文件结构优化；
+2018-2-8 raw_monitor添加切换失败TOP小区监控，对满足门限小区关闭其切换测量开关；
+2018-2-13 raw_monitor高流量小区监控，支持对满足调整基站关闭M8012测量；
+2018-2-13 raw_monitor春节劣化小区监控，分别为低接通、高掉线小区；
 ''')
 
 print('\n')
@@ -113,6 +116,8 @@ class Getini:
         self.subject_lowconnect = 0
         self.subject_dl_low_vo_loss = 0
         self.subject_highload = 0
+        self.subject_handover = 0
+        self.subject_cj_top = 0
         for h in self.cf_email.options('main'):
             self.main[h] = self.cf_email.get('main', h)
 
@@ -221,6 +226,8 @@ class Getini:
             self.休眠小区 = '休眠小区'
             self.可用率 = '可用率'
             self.高流量小区 = '高流量小区_raw'
+            self.handover_raw = 'handover_raw'
+            self.春节劣化小区 = '春节劣化小区'
             if self.actemail == '1':
                 self.subject = self.email['subject'] + datetime.datetime.now(
                 ).strftime('%Y%m%d%H%M')
@@ -580,6 +587,15 @@ class Db:
                     sys.exit()
                 self.kpi_dict[n.lower()] = n_child
 
+        def 春节劣化小区():
+            self.kpi_dict = {}
+            for n in ini.cf_sql.options('春节劣化小区'):
+                n_child = ini.cf_sql.get('春节劣化小区', n).split(',')
+                if len(n_child) != 2:
+                    print('>>> [kpi] 设置异常，请检查！')
+                    sys.exit()
+                self.kpi_dict[n.lower()] = n_child
+
         datatypelist = {'main': main,
                         'top_srvcc': top_srvcc,
                         'top_qci1connect': top_qci1connect,
@@ -602,6 +618,7 @@ class Db:
                         '休眠小区': 休眠小区,
                         '可用率': 可用率,
                         '高流量小区': 高流量小区,
+                        '春节劣化小区': 春节劣化小区,
                         }
 
         datatypelist[datatype]()
@@ -659,6 +676,10 @@ class Email:
                 temp_subject += '【maxue】'
             if ini.subject_highload == 1:
                 temp_subject += '【高流量】'
+            if ini.subject_handover == 1:
+                temp_subject += '【切换失败】'
+            if ini.subject_cj_top == 1:
+                temp_subject += '【劣化】'
         self.message['Subject'] = temp_subject + ini.subject
         self.message['From'] = ini.email['mail_user']
         if len(ini.email['receivers']) > 1:
@@ -1248,8 +1269,9 @@ class Report:
                 if ini.config['autodisabledpmmeasurement'] == '1' and ini.config[
                     'enable_highload'] == '1':
                     dis_pm.autodisabledpmmeasurementdata['mark'] = 1
-                    dis_pm.autodisabledpmmeasurementdata['highload'] = [temp_i[2] for temp_i in db.dbdata]
-                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能成为高流量小区！</b></font>')
+                    dis_pm.autodisabledpmmeasurementdata['top_highload'] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能成为高流量小区，'
+                                    '已尝试将测量开关（mtCellThruput）关闭!!!！</b></font>')
                     html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理！<<<</b></font>')
 
                 html.table()
@@ -1260,6 +1282,57 @@ class Report:
                 except:
                     pass
 
+        # volte低接通小区,小于1erl小区监控
+        if ini.config_raw_monitor_report['active_handover_report'] == '1':
+            db.getdata(
+                ini.handover_raw, timetype='top', counter='切换失败')
+            db.displaydata(datatype='top_handover')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  切换失败TOP小区')
+
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config[
+                    'enable_handover'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_handover'] = [temp_i[2] for temp_i in
+                                                                                 db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区切换较差,'
+                                    '已尝试将测量开关（mtIntereNBHo、mtIntraeNBHo）关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+                html.table()
+                self.topcelln += 1
+                ini.subject_handover = 1
+                try:
+                    html.write_top_cell('切换失败TOP小区')
+                except:
+                    pass
+
+        # 春节劣化小区
+        if ini.config_raw_monitor_report['active_cj_top_report'] == '1':
+            db.getdata(
+                ini.春节劣化小区, timetype='top', counter='春节劣化小区')
+            db.displaydata(datatype='春节劣化小区')
+            if len(db.dbdata) != 0:
+                html.body('h2', '   ◎  春节劣化小区')
+
+                # 保留TOP小区信息
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config[
+                    'enable_cj_top'] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata['top_cj_top'] = [temp_i[2] for temp_i in
+                                                                      db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下为春节保障劣化小区,'
+                                    '已尝试将测量开关（mtUEQuantity）关闭!!!</b></font>')
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+
+                html.table()
+                self.topcelln += 1
+                ini.subject_cj_top = 1
+                try:
+                    html.write_top_cell('春节劣化小区')
+                except:
+                    pass
         # html结束
         html.foot()
         # 生成HTML文件
@@ -1291,6 +1364,9 @@ class Autodisablepm:
             'top_volte_connect_1': [],
             'top_volte_dldrop': [],
             'top_volte_drop': [],
+            'top_handover': [],
+            'top_highload': [],
+            'top_cj_top': [],
         }
         self.para_value_list = {
             'top_srvcc': {},
@@ -1318,6 +1394,9 @@ class Autodisablepm:
             'top_volte_connect_1': {},
             'top_volte_dldrop': {},
             'top_volte_drop': {},
+            'top_handover': {},
+            'top_highload': {},
+            'top_cj_top': {},
         }
         # 仅检查未满足调整基站列表
         self.disabledpmmeasurement_list_pop = {
@@ -1327,6 +1406,9 @@ class Autodisablepm:
             'top_volte_connect_1': [],
             'top_volte_dldrop': [],
             'top_volte_drop': [],
+            'top_handover': [],
+            'top_highload': [],
+            'top_cj_top': [],
         }
         top_name_tran = {
             'overcrowding': '拥塞',
@@ -1335,6 +1417,9 @@ class Autodisablepm:
             'top_volte_connect_1': 'Volte低接通小区_1',
             'top_volte_dldrop': 'Volte高丢包',
             'top_volte_drop': 'Volte高掉话',
+            'top_handover': '切换失败TOP小区',
+            'top_highload': '高流量小区',
+            'top_cj_top': '春节劣化小区',
         }
         for temp_table in self.autodisabledpmmeasurementdata:
             if temp_table != 'mark':
@@ -1675,7 +1760,6 @@ class Autodisablepm:
                 if temp_top_volte_drop_b2_mark == 0:
                     self.disabledpmmeasurement_list_pop[kpi_type].append(temp_enbid)
 
-
     def creat_bat(self):
         # 生成命令列表
         self.cmd_list = []
@@ -1687,6 +1771,9 @@ class Autodisablepm:
             'top_volte_connect': 'disabled_mtEPSBearer.xml',
             'top_volte_connect_1': 'disabled_mtUEstate.xml',
             'top_volte_dldrop': 'disabled_mtQoS.xml',
+            'top_handover': 'disabled_mt_NBHo.xml',
+            'top_highload': 'disabled_mtCellThruput.xml',
+            'top_cj_top': 'disabled_mtUEQuantity.xml',
         }
         self.bat_file_list_bu = {
             'overcrowding': 'enabled_mtUEstate.xml',
@@ -1695,6 +1782,9 @@ class Autodisablepm:
             'top_volte_connect': 'enabled_mtEPSBearer.xml',
             'top_volte_connect_1': 'enabled_mtUEstate.xml',
             'top_volte_dldrop': 'enabled_mtQoS.xml',
+            'top_handover': 'enabled_mt_NBHo.xml',
+            'top_highload': 'enabled_mtCellThruput.xml',
+            'top_cj_top': 'enabled_mtUEQuantity.xml',
         }
         self.bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
         self.bat_path_bu = ''.join((ini.path, '/CommisionTool/temp/EnabeledPMMeasurement_', ini.htmlname, '.bat'))
@@ -1777,6 +1867,9 @@ class Autodisablepm:
             'top_volte_connect_1': 'Volte低接通小区_1',
             'top_volte_dldrop': 'Volte高丢包',
             'top_volte_drop': 'Volte高掉话',
+            'top_handover': '切换失败TOP小区',
+            'top_highload': '高流量小区',
+            'top_cj_top': '春节劣化小区',
         }
         f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
@@ -1895,9 +1988,9 @@ if __name__ == '__main__':
         # 关闭测量
         if dis_pm.autodisabledpmmeasurementdata['mark'] == 1:
             if dis_pm.format_enbid_ip() == 0:
-                print('>>> 未存在需关闭测量小区。')
+                print('>>> 未存在需预处理小区。')
             else:
-                print('>>> 开始尝试关闭小区测量...')
+                print('>>> 开始尝试预处理...')
                 dis_pm.creat_bat()
                 dis_pm.run_disable_pm()
                 dis_pm.creat_log()
@@ -1918,3 +2011,4 @@ if __name__ == '__main__':
         print('='*36)
 
     print(''.join((time.strftime('%Y/%m/%d %H:%M:%S', time.localtime()))))
+    time.sleep(5)

@@ -68,7 +68,11 @@ class Main:
             '拥塞': ['overcrowding', 'enabled_mtUEstate.xml'],
             'eSRVCC切换差小区': ['top_srvcc', 'enabled_actSrvccToGsm.xml'],
             'Volte低接通小区': ['top_volte_connect', 'enabled_mtEPSBearer.xml'],
+            'Volte低接通小区_1': ['top_volte_connect_1', 'enabled_mtUEstate.xml'],
+            '高流量小区': ['top_highload', 'enabled_mtCellThruput.xml'],
             'Volte高丢包': ['top_volte_dldrop', 'enabled_mtQoS.xml'],
+            '春节劣化小区': ['top_cj_top', 'enabled_mtUEQuantity.xml'],
+            '切换失败TOP小区': ['top_handover', 'enabled_mt_NBHo.xml'],
             'Volte高掉话': ['top_volte_drop', ''],
         }
         self.bat_path = ''.join((self.main_path, '/CommisionTool/temp/EnabeledPMMeasurement_', self.today, '.bat'))
@@ -129,8 +133,12 @@ class Main:
             'overcrowding': '拥塞',
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
+            'top_volte_connect_1': 'Volte低接通小区_1',
             'top_volte_dldrop': 'Volte高丢包',
             'top_volte_drop': 'Volte高掉话',
+            '切换失败TOP小区': '切换失败TOP小区',
+            'top_highload': '高流量小区',
+            'top_cj_top': '春节劣化小区',
         }
         f_csv = ''.join((self.main_path, '/HTML_TEMP/EnabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
