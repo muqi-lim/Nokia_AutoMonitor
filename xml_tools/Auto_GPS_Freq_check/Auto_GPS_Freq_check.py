@@ -8,6 +8,7 @@ from email.mime.text import MIMEText
 import datetime
 import xlrd
 import subprocess
+import copy
 
 ##############################################################################
 print("""
@@ -36,6 +37,8 @@ update log:
 2017-10-7 新增并发数控制，可以自定义并发在线获取基站数目
 2017-10-19 新增ip基础信息，可以在处理结果中匹配对应IP的基站信息；
 2017-12-01 支持对gps异常小区进行闭锁；
+2017-12-14 支持微站log的解码，并对dacword值异常的判断新增上下门限；
+2018-4-28  修复解码单站点多个时段数据时显示结果均为最后一个时段的值bug；
 
 
 ''')
@@ -109,6 +112,7 @@ class Main:
         else:
             print('>>> 获取原始文件：', self.file_n)
 
+    # 时区
     def time_diff(self, str_time):
         time_time = datetime.datetime.strptime(str_time, "%Y%m%d%H%M%S")
         time_time_diff = time_time + datetime.timedelta(hours=8)
@@ -219,17 +223,18 @@ class Main:
         data = {}
         self.data[file_name] = {}
 
-        for i in tree.getroot():
-            for j in i:
-                for k in j:
-                    temp_data[k.tag] = k.text
-                data[temp_data['_observationTime']] = temp_data
-        # 兼容所有
-        # for i in tree.getiterator(tag='FrequencyHistoryDataReport'):
+        # for i in tree.getroot():
         #     for j in i:
         #         for k in j:
         #             temp_data[k.tag] = k.text
         #         data[temp_data['_observationTime']] = temp_data
+        # 兼容所有
+        for i in tree.getiterator(tag='FrequencyHistoryDataReport'):
+            for j in i:
+                for k in j:
+                    temp_data[k.tag] = k.text
+                data[temp_data['_observationTime']] = copy.deepcopy(temp_data)
+
             # 只保留TOP
             temp_head_list = sorted(map(int, data.keys()))
             temp_head_list_top_n = map(str, temp_head_list[-int(self.config['items'][0]):])
@@ -290,7 +295,7 @@ class Main:
             for temp_time in self.data[temp_file_name]:
                 temp_dacword = int(self.data[temp_file_name][temp_time]['_dacWord'])
                 temp_ip = temp_file_name.split('_')[0]
-                if temp_dacword >= int(self.config['dacword'][0]):
+                if int(self.config['dacword_a'][0]) >= temp_dacword >= int(self.config['dacword'][0]):
                     if temp_file_name.split('_')[0] not in self.dacword_error_list:
                         self.dacword_error_list[temp_ip] = {temp_time: temp_dacword}
                     else:
