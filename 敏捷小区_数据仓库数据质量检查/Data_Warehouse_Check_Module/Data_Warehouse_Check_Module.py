@@ -8,6 +8,40 @@ import time
 import multiprocessing
 import csv
 
+# Module multiprocessing is organized differently in Python 3.4+
+try:
+    # Python 3.4+
+    if sys.platform.startswith('win'):
+        import multiprocessing.popen_spawn_win32 as forking
+    else:
+        import multiprocessing.popen_fork as forking
+except ImportError:
+    import multiprocessing.forking as forking
+
+if sys.platform.startswith('win'):
+    # First define a modified version of Popen.
+    class _Popen(forking.Popen):
+        def __init__(self, *args, **kw):
+            if hasattr(sys, 'frozen'):
+                # We have to set original _MEIPASS2 value from sys._MEIPASS
+                # to get --onefile mode working.
+                os.putenv('_MEIPASS2', sys._MEIPASS)
+            try:
+                super(_Popen, self).__init__(*args, **kw)
+            finally:
+                if hasattr(sys, 'frozen'):
+                    # On some platforms (e.g. AIX) 'os.unsetenv()' is not
+                    # available. In those cases we cannot delete the variable
+                    # but only set it to the empty string. The bootloader
+                    # can handle this case.
+                    if hasattr(os, 'unsetenv'):
+                        os.unsetenv('_MEIPASS2')
+                    else:
+                        os.putenv('_MEIPASS2', '')
+
+    # Second override 'Popen' class with our modified version.
+    forking.Popen = _Popen
+
 
 class Main:
     # 初始化
@@ -100,8 +134,8 @@ class Main:
 
                 # self.base_data['data_table_head'][temp_sheet_name]
 
-        print(self.base_data)
-        print(self.base_data['check_result_head'])
+        # print(self.base_data)
+        # print(self.base_data['check_result_head'])
 
     def get_file_list(self):
         target_path = os.path.join(self.main_path,'target_data')
@@ -306,9 +340,8 @@ class Main:
         f_result_xlsx.save(path_base_data)
 
 
-
-
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     star_time = time.time()
     main = Main()
     # 获取基础数据
