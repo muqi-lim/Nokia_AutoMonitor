@@ -1,10 +1,2 @@
-*.csv
-*.pyc
-*.xml
-*.html
-*.sql
-*.exe
-*.docx
-*.rar
 __pycache__/
 build/
