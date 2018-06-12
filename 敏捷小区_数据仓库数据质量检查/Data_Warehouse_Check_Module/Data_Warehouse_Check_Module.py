@@ -238,13 +238,25 @@ class Main:
             except:
                 return 2
 
+        def is_like(obj_target_value, obj_threshold_upper, obj_threshold_lower):
+            try:
+                temp_target_value = obj_target_value
+                if obj_threshold_upper == 'not none':
+                    if temp_target_value == '':
+                        return 1
+                else:
+                    return 0
+            except:
+                return 2
+
         rule_map = {
             'between': rule_between,
             '>': greater_than,
             '>=': greater_equal_than,
             '<': less_than,
             '<=': less_equal_than,
-            '=': equal_to
+            '=': equal_to,
+            'is': is_like
         }
         return rule_map[monitor_sign_of_operation](target_value, threshold_upper, threshold_lower)
 
@@ -309,15 +321,20 @@ class Main:
 
     def writer(self, value_list):
         f_result_xlsx = openpyxl.Workbook()
+        summary_sheet = {}
         for temp_table in value_list:
             temp_head_list = self.base_data['check_result_head'][temp_table]
             temp_head_check_list = list(self.base_data['monitoring_object_and_mapping']['sheet_data'][
                                             temp_table].keys())
             temp_head_check_list.sort()
+
             if temp_table not in f_result_xlsx.sheetnames:
                 f_result_xlsx.create_sheet(temp_table)
                 temp_f_result_xlsx_sheet = f_result_xlsx[temp_table]
                 temp_f_result_xlsx_sheet.append(temp_head_list + temp_head_check_list)
+
+            if temp_table not in summary_sheet:
+                summary_sheet[temp_table] = {i: 0 for i in temp_head_check_list}
 
             temp_f_result_xlsx_sheet = f_result_xlsx[temp_table]
             for temp_table_row in value_list[temp_table]:
@@ -329,6 +346,7 @@ class Main:
                 for temp_check_name in temp_head_check_list:
                     if temp_check_name in temp_table_row[1]:
                         temp_check_name_value = temp_table_row[1][temp_check_name]
+                        summary_sheet[temp_table][temp_check_name] += 1
                         if temp_check_name_value == '':
                             temp_row_list.append('空')
                         else:
@@ -336,6 +354,22 @@ class Main:
                     else:
                         temp_row_list.append('正确')
                 temp_f_result_xlsx_sheet.append(temp_row_list)
+
+        # 生成汇总表
+        temp_summary_sheet = f_result_xlsx['Sheet']
+        temp_summary_sheet.title = 'summary_sheet'.upper()
+        for temp_table in summary_sheet:
+            temp_check_head_list = list(summary_sheet[temp_table].keys())
+            temp_check_head_list.sort()
+            temp_row = ['check_sheet_name'.upper(), ] + temp_check_head_list
+            temp_check_head_value_num = [summary_sheet[temp_table][temp_check_head] for temp_check_head in
+                                         temp_check_head_list]
+            temp_summary_sheet.append(temp_row)
+            temp_summary_sheet.append([temp_table, ] + temp_check_head_value_num)
+            temp_summary_sheet.append([])
+            temp_summary_sheet.append([])
+
+        # 保存文件
         path_base_data = os.path.join(self.main_path, 'target_data\check_result.xlsx')
         f_result_xlsx.save(path_base_data)
 
