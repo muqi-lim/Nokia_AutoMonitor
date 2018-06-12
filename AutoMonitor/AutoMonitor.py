@@ -76,6 +76,7 @@ update log:
 2018-2-8 raw_monitor添加切换失败TOP小区监控，对满足门限小区关闭其切换测量开关；
 2018-2-13 raw_monitor高流量小区监控，支持对满足调整基站关闭M8012测量；
 2018-2-13 raw_monitor春节劣化小区监控，分别为低接通、高掉线小区；
+2018-5-22 raw_monitor模块增加volte掉话率监控（当天累计，掉话率超过门限）；
 ''')
 
 print('\n')
@@ -289,6 +290,68 @@ class Getini:
                             temp_table).row_values(i)[0])))
                     except:
                         pass
+
+    def add_report(
+            self,
+            subject_x='',
+            sql_name='',
+            sel_self_name='',
+            timetype_local='top',
+            counter_local='',
+            threshold_local='',
+            datatype_local='',
+            report_name='',
+            disable_x_type='',
+            dir_name='',
+            warning_text='',
+            dir_name_cn='',
+            disable_xml_file='',
+            enable_xml_file='',
+    ):
+        # 设置邮件表头
+        if subject_x != '' and subject_x not in dir(self):
+            setattr(self, subject_x, 0)
+
+        # 设置调用的sql名
+        if sql_name != '' and sql_name not in dir(self):
+            setattr(self, sql_name, sql_name)
+
+        # 设置调用的相关列表
+        if dir_name not in dis_pm.autodisabledpmmeasurementdata:
+            dis_pm.autodisabledpmmeasurementdata[dir_name] = []
+        if dir_name not in dis_pm.disabledpmmeasurement_list:
+            dis_pm.disabledpmmeasurement_list[dir_name] = {}
+        if dir_name not in dis_pm.disabledpmmeasurement_list_pop:
+            dis_pm.disabledpmmeasurement_list_pop[dir_name] = []
+        if dir_name not in dis_pm.top_name_tran:
+            dis_pm.top_name_tran[dir_name] = dir_name_cn
+        if dir_name not in dis_pm.bat_file_list:
+            dis_pm.bat_file_list[dir_name] = disable_xml_file
+        if dir_name not in dis_pm.bat_file_list_bu:
+            dis_pm.bat_file_list_bu[dir_name] = enable_xml_file
+
+        db.getdata(
+            sel_self_name, timetype=timetype_local, counter=counter_local, threshold=threshold_local)
+        db.displaydata(datatype=datatype_local)
+        if len(db.dbdata) != 0:
+            html.body('h2', '   ◎  {0}'.format(report_name))
+
+            # 保留TOP小区信息
+            try:
+                if ini.config['autodisabledpmmeasurement'] == '1' and ini.config[disable_x_type] == '1':
+                    dis_pm.autodisabledpmmeasurementdata['mark'] = 1
+                    dis_pm.autodisabledpmmeasurementdata[dir_name] = [temp_i[2] for temp_i in db.dbdata]
+                    html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! {0}!!!</b></font>'.format(warning_text))
+                    html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
+            except:
+                pass
+            html.table()
+            db_report.topcelln += 1
+            setattr(ini, subject_x, 1)
+            try:
+                html.write_top_cell(dir_name_cn)
+            except:
+                pass
 
 
 class Db:
@@ -1070,7 +1133,7 @@ class Report:
             )
             db.displaydata(datatype='top_volte_drop')
             if len(db.dbdata) != 0:
-                html.body('h2', '   ◎  volte掉话')
+                html.body('h2', '   ◎  volte掉话（按上一个15分钟掉话次数统计）')
 
                 # 保留TOP小区信息
                 if ini.config['autodisabledpmmeasurement'] == '1' and ini.config['enable_cell_raw_all_volte_drop'] == '1':
@@ -1333,6 +1396,24 @@ class Report:
                     html.write_top_cell('春节劣化小区')
                 except:
                     pass
+
+        # volte高掉话小区,按当天累计掉话率及话务量统计通报
+        if ini.config_raw_monitor_report['active_volte_drop_report_add_up'] == '1':
+            ini.add_report(subject_x='volte_drop',
+                           sql_name='cell_raw_all_volte_drop',
+                           sel_self_name='cell_raw_all_volte_drop',
+                           timetype_local='top',
+                           counter_local='',
+                           threshold_local='',
+                           datatype_local='top_qci1drop',
+                           report_name='volte高掉话小区(按当天累计掉话率及话务量统计)',
+                           disable_x_type='',
+                           dir_name='top_volte_drop_add_up',
+                           warning_text='',
+                           dir_name_cn='Volte高掉话(累计)',
+                           disable_xml_file='',
+                           enable_xml_file='')
+
         # html结束
         html.foot()
         # 生成HTML文件
@@ -1368,24 +1449,6 @@ class Autodisablepm:
             'top_highload': [],
             'top_cj_top': [],
         }
-        self.para_value_list = {
-            'top_srvcc': {},
-            'top_volte_drop': {},
-        }
-        # 每个基站生成对应此xml
-        self.cmd_xml_name_list = {
-            'top_srvcc': {
-                'up': {},
-                'bu': {}
-            },
-            'top_volte_drop': {
-                'up': {},
-                'bu': {}
-            }
-        }
-
-    def format_enbid_ip(self):
-        # 获取高拥塞小区，并转化成 {enbid：ip} 格式
         self.disabledpmmeasurement_list = {
             'mark': 0,
             'overcrowding': {},
@@ -1410,7 +1473,22 @@ class Autodisablepm:
             'top_highload': [],
             'top_cj_top': [],
         }
-        top_name_tran = {
+        self.para_value_list = {
+            'top_srvcc': {},
+            'top_volte_drop': {},
+        }
+        # 每个基站生成对应此xml
+        self.cmd_xml_name_list = {
+            'top_srvcc': {
+                'up': {},
+                'bu': {}
+            },
+            'top_volte_drop': {
+                'up': {},
+                'bu': {}
+            }
+        }
+        self.top_name_tran = {
             'overcrowding': '拥塞',
             'top_srvcc': 'eSRVCC切换差小区',
             'top_volte_connect': 'Volte低接通小区',
@@ -1421,10 +1499,37 @@ class Autodisablepm:
             'top_highload': '高流量小区',
             'top_cj_top': '春节劣化小区',
         }
+        # 参数修改脚本调用，调整
+        self.bat_file_list = {
+            'overcrowding': 'disabled_mtUEstate.xml',
+            'top_srvcc': {
+            },
+            'top_volte_connect': 'disabled_mtEPSBearer.xml',
+            'top_volte_connect_1': 'disabled_mtUEstate.xml',
+            'top_volte_dldrop': 'disabled_mtQoS.xml',
+            'top_handover': 'disabled_mt_NBHo.xml',
+            'top_highload': 'disabled_mtCellThruput.xml',
+            'top_cj_top': 'disabled_mtUEQuantity.xml',
+        }
+        # 参数修改脚本调用，回调
+        self.bat_file_list_bu = {
+            'overcrowding': 'enabled_mtUEstate.xml',
+            'top_srvcc': {
+            },
+            'top_volte_connect': 'enabled_mtEPSBearer.xml',
+            'top_volte_connect_1': 'enabled_mtUEstate.xml',
+            'top_volte_dldrop': 'enabled_mtQoS.xml',
+            'top_handover': 'enabled_mt_NBHo.xml',
+            'top_highload': 'enabled_mtCellThruput.xml',
+            'top_cj_top': 'enabled_mtUEQuantity.xml',
+        }
+
+    def format_enbid_ip(self):
+        # 获取高拥塞小区，并转化成 {enbid：ip} 格式
         for temp_table in self.autodisabledpmmeasurementdata:
             if temp_table != 'mark':
                 for temp_enbid in self.autodisabledpmmeasurementdata[temp_table]:
-                    if str(temp_enbid[:6]) not in ini.Except_Enb_List[top_name_tran[temp_table]]:
+                    if str(temp_enbid[:6]) not in ini.Except_Enb_List[self.top_name_tran[temp_table]]:
                         try:
                             if str(ini.cellinfo_data[temp_enbid][1]).count('.') == 3:
                                 if temp_enbid[:6] not in self.disabledpmmeasurement_list[temp_table]:
@@ -1764,28 +1869,6 @@ class Autodisablepm:
         # 生成命令列表
         self.cmd_list = []
         # 生成BAT文件
-        self.bat_file_list = {
-            'overcrowding': 'disabled_mtUEstate.xml',
-            'top_srvcc': {
-            },
-            'top_volte_connect': 'disabled_mtEPSBearer.xml',
-            'top_volte_connect_1': 'disabled_mtUEstate.xml',
-            'top_volte_dldrop': 'disabled_mtQoS.xml',
-            'top_handover': 'disabled_mt_NBHo.xml',
-            'top_highload': 'disabled_mtCellThruput.xml',
-            'top_cj_top': 'disabled_mtUEQuantity.xml',
-        }
-        self.bat_file_list_bu = {
-            'overcrowding': 'enabled_mtUEstate.xml',
-            'top_srvcc': {
-            },
-            'top_volte_connect': 'enabled_mtEPSBearer.xml',
-            'top_volte_connect_1': 'enabled_mtUEstate.xml',
-            'top_volte_dldrop': 'enabled_mtQoS.xml',
-            'top_handover': 'enabled_mt_NBHo.xml',
-            'top_highload': 'enabled_mtCellThruput.xml',
-            'top_cj_top': 'enabled_mtUEQuantity.xml',
-        }
         self.bat_path = ''.join((ini.path, '/CommisionTool/temp/DisabeledPMMeasurement_', ini.htmlname, '.bat'))
         self.bat_path_bu = ''.join((ini.path, '/CommisionTool/temp/EnabeledPMMeasurement_', ini.htmlname, '.bat'))
         f_dm = open(self.bat_path, 'w')
@@ -1860,17 +1943,6 @@ class Autodisablepm:
 
     def creat_log(self):
         # 读取批处理程序运行结果，并生成csv记录表
-        top_name_tran = {
-            'overcrowding': '拥塞',
-            'top_srvcc': 'eSRVCC切换差小区',
-            'top_volte_connect': 'Volte低接通小区',
-            'top_volte_connect_1': 'Volte低接通小区_1',
-            'top_volte_dldrop': 'Volte高丢包',
-            'top_volte_drop': 'Volte高掉话',
-            'top_handover': '切换失败TOP小区',
-            'top_highload': '高流量小区',
-            'top_cj_top': '春节劣化小区',
-        }
         f_csv = ''.join((ini.path, '/HTML_TEMP/DisabeledPMMeasurementEnbList.csv'))
         if not os.path.exists(f_csv):
             f_csv_new = open(f_csv, 'w')
@@ -1885,7 +1957,7 @@ class Autodisablepm:
                         f_dml.write(time.strftime('%Y/%m/%d %H:%M:%S', time.strptime(str(ini.htmlname),
                                                                                      '%Y%m%d%H%M%S')))
                         f_dml.write(',')
-                        f_dml.write(top_name_tran[temp_table])
+                        f_dml.write(self.top_name_tran[temp_table])
                         f_dml.write(',')
                         f_dml.write(str(temp_enbid))
                         f_dml.write(',')
