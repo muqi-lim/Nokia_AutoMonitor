@@ -60,6 +60,7 @@ def copy_right():
     2017-9-5 新增MRO解码AOA表；
     2017-10-23 修复解码MRO时部分小区部分时段缺失bug；
     2018-1-18 兼容FDD MRO解码MR覆盖率
+    2018-4-23 支持按邻区频点计算频点对应覆盖率（友商竞对MR覆盖率）
 
     ''')
     logging.info(u'-' * 36)
@@ -500,6 +501,36 @@ class Main:
                         self.temp_mro_data[report_time]['mro_aoa'] = {ecid: numpy.array(temp_mro_aoa)}
             break
 
+    def mro_earfcn(self, object_mro, report_time, enbid):
+        for value in object_mro.iter('v'):
+            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
+            ecid_earfcn = '_'.join(map(str, (ecid1, temp_value[11])))
+            if temp_value[11] != 0:
+                temp_mro_earfcn = ['mro_earfcn',
+                                   ecid_earfcn,
+                                   [0] * 96
+                                   ]
+                temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[0])]] = 1
+                temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[9])]+48] = 1
+                # 先汇总，后才传送到queue
+                try:
+                    self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] += numpy.array(temp_mro_earfcn[2])
+                except:
+                    try:
+                        self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
+                            temp_mro_earfcn[2])
+                    except:
+                        try:
+                            self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
+                            self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
+                                temp_mro_earfcn[2])
+                        except:
+                            self.temp_mro_data[report_time] = {}
+                            self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
+                            self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
+                                temp_mro_earfcn[2])
+
     def get_report_time(self, tree):
 
         """获取报告时段"""
@@ -604,7 +635,8 @@ class Main:
                         log_file_child_num += 1
                         log_file_child_list.append(file_name)
             except:
-                traceback.print_exc()
+                pass
+                # traceback.print_exc()
 
         elif file_type == 'gz':
             try:
@@ -705,6 +737,7 @@ class Main:
                               'mro_ecid': self.mro_ecid,
                               'mro_rsrp': self.mro_rsrp,
                               'mro_aoa': self.mro_aoa,
+                              'mro_earfcn': self.mro_earfcn,
                               }
                 report_time = self.get_report_time(tree)
                 enbid = self.get_enbid(tree)
@@ -1059,6 +1092,56 @@ class Main:
                                 temp_enbid = str(int(ecid_id) // 256)
                                 temp_enb_cellid = '_'.join((str(int(ecid_id) // 256), str(int(ecid_id) % 256)))
                                 writer.writerow([temp_day, temp_report_time, ecid_id, temp_enbid, temp_enb_cellid
+                                                 ] + list(temp_value))
+                elif table == 'mro_earfcn':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(
+                            ['DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'n_EARFCN',
+                             'S_MR覆盖率（RSRP>=-110)', 'S_RSRP>=-110计数器', 'S_ALL计数器',
+                             'N_MR覆盖率（RSRP>=-110)', 'N_RSRP>=-110计数器', 'N_ALL计数器',
+                             's_RSRP_00', 's_RSRP_01',
+                             's_RSRP_02', 's_RSRP_03', 's_RSRP_04', 's_RSRP_05', 's_RSRP_06', 's_RSRP_07', 's_RSRP_08',
+                             's_RSRP_09', 's_RSRP_10', 's_RSRP_11', 's_RSRP_12', 's_RSRP_13', 's_RSRP_14', 's_RSRP_15',
+                             's_RSRP_16', 's_RSRP_17', 's_RSRP_18', 's_RSRP_19', 's_RSRP_20', 's_RSRP_21', 's_RSRP_22',
+                             's_RSRP_23', 's_RSRP_24', 's_RSRP_25', 's_RSRP_26', 's_RSRP_27', 's_RSRP_28', 's_RSRP_29',
+                             's_RSRP_30', 's_RSRP_31', 's_RSRP_32', 's_RSRP_33', 's_RSRP_34', 's_RSRP_35', 's_RSRP_36',
+                             's_RSRP_37', 's_RSRP_38', 's_RSRP_39', 's_RSRP_40', 's_RSRP_41', 's_RSRP_42', 's_RSRP_43',
+                             's_RSRP_44', 's_RSRP_45', 's_RSRP_46', 's_RSRP_47',
+                             'n_RSRP_00', 'n_RSRP_01', 'n_RSRP_02',
+                             'n_RSRP_03', 'n_RSRP_04', 'n_RSRP_05', 'n_RSRP_06', 'n_RSRP_07', 'n_RSRP_08', 'n_RSRP_09',
+                             'n_RSRP_10', 'n_RSRP_11', 'n_RSRP_12', 'n_RSRP_13', 'n_RSRP_14', 'n_RSRP_15', 'n_RSRP_16',
+                             'n_RSRP_17', 'n_RSRP_18', 'n_RSRP_19', 'n_RSRP_20', 'n_RSRP_21', 'n_RSRP_22', 'n_RSRP_23',
+                             'n_RSRP_24', 'n_RSRP_25', 'n_RSRP_26', 'n_RSRP_27', 'n_RSRP_28', 'n_RSRP_29', 'n_RSRP_30',
+                             'n_RSRP_31', 'n_RSRP_32', 'n_RSRP_33', 'n_RSRP_34', 'n_RSRP_35', 'n_RSRP_36', 'n_RSRP_37',
+                             'n_RSRP_38', 'n_RSRP_39', 'n_RSRP_40', 'n_RSRP_41', 'n_RSRP_42', 'n_RSRP_43', 'n_RSRP_44',
+                             'n_RSRP_45', 'n_RSRP_46', 'n_RSRP_47'])
+                        for temp_report_time in self.mro_data_data['mro'][table]:
+                            for ecid_id in self.mro_data_data['mro'][table][temp_report_time]:
+                                temp_value = self.mro_data_data['mro'][table][temp_report_time][ecid_id]
+                                s_temp_value_1 = sum(temp_value[7:48])
+                                s_temp_value_2 = sum(temp_value[0:48])
+                                if s_temp_value_2 != 0:
+                                    s_temp_value_3 = round(s_temp_value_1 / s_temp_value_2 * 100, 2)
+                                else:
+                                    s_temp_value_3 = '-'
+                                n_temp_value_1 = sum(temp_value[55:])
+                                n_temp_value_2 = sum(temp_value[48:])
+                                if n_temp_value_2 != 0:
+                                    n_temp_value_3 = round(n_temp_value_1 / n_temp_value_2 * 100, 2)
+                                else:
+                                    n_temp_value_3 = '-'
+                                temp_ecid_earfcn = ecid_id.split('_')
+                                temp_enbid = str(int(temp_ecid_earfcn[0]) // 256)
+                                temp_enb_cellid = '_'.join((str(int(temp_ecid_earfcn[0]) // 256), str(int(temp_ecid_earfcn[0]) % 256)))
+                                writer.writerow([temp_day, temp_report_time, temp_ecid_earfcn[0], temp_enbid,
+                                                 temp_enb_cellid,
+                                                 temp_ecid_earfcn[1],
+                                                 s_temp_value_3, s_temp_value_1, s_temp_value_2,
+                                                 n_temp_value_3, n_temp_value_1, n_temp_value_2,
                                                  ] + list(temp_value))
 
     def run_manager(self, mr_type):
