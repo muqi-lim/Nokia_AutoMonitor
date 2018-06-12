@@ -242,7 +242,10 @@ class Main:
             try:
                 temp_target_value = obj_target_value
                 if obj_threshold_upper == 'not none':
+                    print(temp_target_value)
                     if temp_target_value == '':
+                        return 0
+                    else:
                         return 1
                 else:
                     return 0
