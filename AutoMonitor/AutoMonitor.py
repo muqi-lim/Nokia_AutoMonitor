@@ -77,6 +77,7 @@ update log:
 2018-2-13 raw_monitor高流量小区监控，支持对满足调整基站关闭M8012测量；
 2018-2-13 raw_monitor春节劣化小区监控，分别为低接通、高掉线小区；
 2018-5-22 raw_monitor模块增加volte掉话率监控（当天累计，掉话率超过门限）；
+2018-6-13 raw_monitor模块增加volte掉话率监控（当天累计，掉话率超过门限）可自动关闭测量；
 ''')
 
 print('\n')
@@ -1222,7 +1223,7 @@ class Report:
                     dis_pm.autodisabledpmmeasurementdata['top_volte_connect_1'] = [temp_i[2] for temp_i in
                                                                                  db.dbdata]
                     html.body('h3', '<font color="#ff0000"><b>     !!!注意!!! 以下小区可能演变换成volte低接通小区,'
-                                    '已尝试将测量开关（mtUEstate）关闭!!!</b></font>')
+                                    '已尝试将测量开关（mtUEstate、mtInterSysHo）关闭!!!</b></font>')
                     html.body('h3', '<font color="#ff0000"><b>       >>>请尽快处理并恢复测量开关！<<<</b></font>')
 
                 html.table()
@@ -1407,12 +1408,12 @@ class Report:
                            threshold_local='',
                            datatype_local='top_qci1drop',
                            report_name='volte高掉话小区(按当天累计掉话率及话务量统计)',
-                           disable_x_type='',
+                           disable_x_type='enable_volte_drop_report_add_up',
                            dir_name='top_volte_drop_add_up',
-                           warning_text='',
+                           warning_text='以下小区可能演变换成高掉话小区，已尝试关闭测量开关（mtUEstate、mtInterSysHo）!!!',
                            dir_name_cn='Volte高掉话(累计)',
-                           disable_xml_file='',
-                           enable_xml_file='')
+                           disable_xml_file='disabled_mtEPSBearer.xml',
+                           enable_xml_file='enabled_mtEPSBearer.xml')
 
         # html结束
         html.foot()
