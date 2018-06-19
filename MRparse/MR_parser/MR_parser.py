@@ -61,6 +61,7 @@ def copy_right():
     2017-10-23 修复解码MRO时部分小区部分时段缺失bug；
     2018-1-18 兼容FDD MRO解码MR覆盖率
     2018-4-23 支持按邻区频点计算频点对应覆盖率（友商竞对MR覆盖率）
+    2018-6-13 修复激活MDT时，MRO解码异常bug；
 
     ''')
     logging.info(u'-' * 36)
@@ -357,14 +358,13 @@ class Main:
     def mro_main(self, mro_object, report_time, enbid):
 
         """统计mro_main表"""
-
         temp_id = 1
         ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         # cmcc重叠覆盖率采集数计数器
         overlap_times = 0
         temp_mro_main = []
         for value in mro_object.iter('v'):
-            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
             if temp_id == 1:
                 ecid_earfcn_pci = '_'.join(map(str, (ecid, temp_value[7], temp_value[8])))
                 temp_mro_main = ['mro_main',
@@ -417,7 +417,7 @@ class Main:
 
     def mro_ecid(self, object_mro, report_time, enbid):
         for value in object_mro.iter('v'):
-            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
             ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
             ecid_earfcn_pci_n_earfcn_n_pci = '_'.join(map(str, (ecid1,
                                                                 temp_value[7],
@@ -483,7 +483,7 @@ class Main:
     def mro_aoa(self, mro_object, report_time, enbid):
         ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         for value in mro_object.iter('v'):
-            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
             temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -503,7 +503,7 @@ class Main:
 
     def mro_earfcn(self, object_mro, report_time, enbid):
         for value in object_mro.iter('v'):
-            temp_value = list(map(int, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
             ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
             ecid_earfcn = '_'.join(map(str, (ecid1, temp_value[11])))
             if temp_value[11] != 0:
@@ -715,7 +715,7 @@ class Main:
                         for temp_id in temp_mr_name.iter('object'):
                             temp_mrs_ecid = temp_id.attrib['id']
                             for temp_value in temp_id.iter('v'):
-                                temp_values = numpy.array(list(map(int, temp_value.text.rstrip().split(' '))))
+                                temp_values = numpy.array(list(map(float, temp_value.text.rstrip().split(' '))))
                                 try:
                                     self.temp_mrs_data[report_time][temp_table_name_1][temp_mrs_ecid] += temp_values
                                 except:
@@ -974,7 +974,7 @@ class Main:
                                 else:
                                     temp_value_1 = temp_value[0:3]
                                 temp_value = list(temp_value_1) + list(temp_value[3:])
-                                temp_value = list(map(int, temp_value))
+                                temp_value = list(map(float, temp_value))
                                 temp_id = table_id.split('_')
                                 temp_senbid = str(int(temp_id[0]) // 256)
                                 temp_ncellid, temp_min_stance = self.min_distance_cell(
