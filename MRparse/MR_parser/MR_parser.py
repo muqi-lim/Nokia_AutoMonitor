@@ -14,6 +14,7 @@ import traceback
 import math
 import shutil
 import logging
+import openpyxl
 
 
 def copy_right():
@@ -62,6 +63,8 @@ def copy_right():
     2018-1-18 兼容FDD MRO解码MR覆盖率
     2018-4-23 支持按邻区频点计算频点对应覆盖率（友商竞对MR覆盖率）
     2018-6-13 修复激活MDT时，MRO解码异常bug；
+    2018-6-24 添加MDT解码，当mro_parse_sheet设置为mro_rsrp_mdt时，可以生成仅带经纬度的rsrp采样点及经纬度详表；
+    2018-7-18 友商竞对MR覆盖率增加按 运营商 进行汇总统计；
 
     ''')
     logging.info(u'-' * 36)
@@ -240,6 +243,18 @@ class Main:
                 -11: 4, -10: 5, -9: 6, -8: 7, -7: 8, -6: 9, -5: 10, -4: 11, -3: 12, -2: 13, -1: 14, 0: 15, 1: 16,
                 2: 17, 3: 18, 4: 19, 5: 20, 6: 21, 7: 22, 8: 23, 9: 24, 10: 25, 11: 26
             }
+
+            if 'mro_earfcn' in self.config_mro['mro_parse_sheet']:
+                path_base_data = os.path.join(self.main_path, '频点运营商对应关系.xlsx')
+                f_base_data_wb = openpyxl.load_workbook(path_base_data, read_only=True)
+                self.config_mro['operator_list'] = {}
+                for temp_sheet_name in f_base_data_wb.sheetnames:
+                    if temp_sheet_name == '频点运营商对应关系':
+                        temp_f_base_data_wb_sheet = f_base_data_wb[temp_sheet_name]
+                        temp_head = []
+                        for temp_row in temp_f_base_data_wb_sheet.iter_rows():
+                            temp_value = [j.value for j in temp_row]
+                            self.config_mro['operator_list'][temp_value[0]] = temp_value[2]
 
     def get_files(self, path):
 
@@ -463,7 +478,7 @@ class Main:
     def mro_rsrp(self, mro_object, report_time, enbid):
         ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         for value in mro_object.iter('v'):
-            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
+            temp_value = value.text.rstrip().split(' ')
             temp_mro_rsrp = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             temp_mro_rsrp[self.mro_rsrp_list[int(temp_value[0])]] = 1
@@ -478,6 +493,55 @@ class Main:
                     except:
                         self.temp_mro_data[report_time] = {}
                         self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: numpy.array(temp_mro_rsrp)}
+            break
+
+    def mro_rsrp_mdt(self, mro_object, report_time, enbid):
+        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+        for value in mro_object.iter('v'):
+            temp_value = value.text.rstrip().split(' ')
+            try:
+                if temp_value[27] != 'NIL':
+                    temp_mro_rsrp_mdt = [0] * 48
+                    temp_mro_rsrp_mdt[self.mro_rsrp_list[int(temp_value[0])]] = 1
+                    ecid_long_lat = '_'.join(
+                        (
+                            str(ecid),
+                            temp_value[27],
+                            temp_value[28],
+                            temp_value[0],
+                            temp_value[1],
+                            temp_value[6]
+                        )
+                    )
+                    try:
+                        self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] += numpy.array(temp_mro_rsrp_mdt)
+                    except:
+                        try:
+                            self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] = numpy.array(temp_mro_rsrp_mdt)
+                        except:
+                            try:
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+                            except:
+                                self.temp_mro_data[report_time] = {}
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+
+                    try:
+                        self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] += numpy.array([1])
+                    except:
+                        try:
+                            self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] = numpy.array([1])
+                        except:
+                            try:
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
+                                                                                               numpy.array([1])}
+                            except:
+                                self.temp_mro_data[report_time] = {}
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
+                                                                                               numpy.array([1])}
+
+            except:
+                pass
+
             break
 
     def mro_aoa(self, mro_object, report_time, enbid):
@@ -501,35 +565,86 @@ class Main:
                         self.temp_mro_data[report_time]['mro_aoa'] = {ecid: numpy.array(temp_mro_aoa)}
             break
 
+    # def mro_earfcn(self, object_mro, report_time, enbid):
+    #     for value in object_mro.iter('v'):
+    #         temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
+    #         ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
+    #         ecid_earfcn = '_'.join(map(str, (ecid1, temp_value[11])))
+    #         if temp_value[11] != 0:
+    #             temp_mro_earfcn = ['mro_earfcn',
+    #                                ecid_earfcn,
+    #                                [0] * 96
+    #                                ]
+    #             temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[0])]] = 1
+    #             temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[9])]+48] = 1
+    #             # 先汇总，后才传送到queue
+    #             try:
+    #                 self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] += numpy.array(temp_mro_earfcn[2])
+    #             except:
+    #                 try:
+    #                     self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
+    #                         temp_mro_earfcn[2])
+    #                 except:
+    #                     try:
+    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
+    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
+    #                             temp_mro_earfcn[2])
+    #                     except:
+    #                         self.temp_mro_data[report_time] = {}
+    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
+    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
+    #                             temp_mro_earfcn[2])
+
     def mro_earfcn(self, object_mro, report_time, enbid):
+        ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
+        temp_value_list = []
+        temp_mro_earfcn = [0] * 96
+        temp_mro_earfcn_operator = [0] * 96
         for value in object_mro.iter('v'):
             temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
-            ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
-            ecid_earfcn = '_'.join(map(str, (ecid1, temp_value[11])))
             if temp_value[11] != 0:
-                temp_mro_earfcn = ['mro_earfcn',
-                                   ecid_earfcn,
-                                   [0] * 96
-                                   ]
-                temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[0])]] = 1
-                temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[9])]+48] = 1
-                # 先汇总，后才传送到queue
+                temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[9])]+48] += 1
+                temp_value_list.append(int(temp_value[9]))
+            else:
+                break
+
+        if len(temp_value_list) != 0:
+            temp_mro_earfcn_operator[self.mro_rsrp_list[max(temp_value_list)]+48] += 1
+            temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[0])]] += 1
+
+            ecid_earfcn = '_'.join(map(str, (ecid1, temp_value[11])))
+            try:
+                ecid_operator = '_'.join(map(str, (ecid1, self.config_mro['operator_list'][int(temp_value[11])])))
+            except:
+                ecid_operator = '_'.join(map(str, (ecid1, '其它')))
+
+            try:
+                self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] += numpy.array(temp_mro_earfcn)
+            except:
                 try:
-                    self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] += numpy.array(temp_mro_earfcn[2])
+                    self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = numpy.array(temp_mro_earfcn)
                 except:
                     try:
-                        self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
-                            temp_mro_earfcn[2])
+                        self.temp_mro_data[report_time]['mro_earfcn'] = {}
+                        self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = numpy.array(temp_mro_earfcn)
                     except:
-                        try:
-                            self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
-                            self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
-                                temp_mro_earfcn[2])
-                        except:
-                            self.temp_mro_data[report_time] = {}
-                            self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
-                            self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
-                                temp_mro_earfcn[2])
+                        self.temp_mro_data[report_time] = {}
+                        self.temp_mro_data[report_time]['mro_earfcn'] = {}
+                        self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = numpy.array(temp_mro_earfcn)
+
+            try:
+                self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] += numpy.array(temp_mro_earfcn)
+            except:
+                try:
+                    self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = numpy.array(temp_mro_earfcn)
+                except:
+                    try:
+                        self.temp_mro_data[report_time]['mro_earfcn_operator'] = {}
+                        self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = numpy.array(temp_mro_earfcn)
+                    except:
+                        self.temp_mro_data[report_time] = {}
+                        self.temp_mro_data[report_time]['mro_earfcn_operator'] = {}
+                        self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = numpy.array(temp_mro_earfcn)
 
     def get_report_time(self, tree):
 
@@ -736,6 +851,7 @@ class Main:
                 table_list = {'mro_main': self.mro_main,
                               'mro_ecid': self.mro_ecid,
                               'mro_rsrp': self.mro_rsrp,
+                              'mro_rsrp_mdt': self.mro_rsrp_mdt,
                               'mro_aoa': self.mro_aoa,
                               'mro_earfcn': self.mro_earfcn,
                               }
@@ -1033,7 +1149,7 @@ class Main:
                                                  sum(temp_value[9:22]),
                                                  temp_value_1 - 140
                                                  ])
-                elif table == 'mro_rsrp':
+                elif table in ('mro_rsrp', 'mro_rsrp_mdt'):
                     with open(os.path.join(self.config_main['target_path'][0],
                                            '{0}{1}_{2}.csv'.format(table,
                                                                    temp_day_head,
@@ -1067,6 +1183,23 @@ class Main:
                                                  temp_value_3,
                                                  temp_value_1,
                                                  temp_value_2] + list(temp_value))
+                elif table == 'mro_rsrp_mdt_details':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'UELongitude',
+                                         'UELatitude', 'LteScRSRP', 'LteScRSRQ', 'LteScSinrUL', '重复次数'))
+                        for temp_report_time in self.mro_data_data['mro'][table]:
+                            for ecid_id in self.mro_data_data['mro'][table][temp_report_time]:
+                                temp_value = ecid_id.split('_')
+                                temp_value_num = str(self.mro_data_data['mro'][table][temp_report_time][ecid_id][0])
+                                temp_enbid = str(int(temp_value[0]) // 256)
+                                temp_enb_cellid = '_'.join((str(int(temp_value[0]) // 256),
+                                                            str(int(temp_value[0]) % 256)))
+                                writer.writerow([temp_day, temp_report_time, temp_value[0],
+                                                 temp_enbid, temp_enb_cellid] + temp_value[1:] + [temp_value_num,])
                 elif table == 'mro_aoa':
                     with open(os.path.join(self.config_main['target_path'][0],
                                            '{0}{1}_{2}.csv'.format(table,
@@ -1101,6 +1234,57 @@ class Main:
                         writer = csv.writer(csvfile)
                         writer.writerow(
                             ['DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'n_EARFCN',
+                             'S_MR覆盖率（RSRP>=-110)', 'S_RSRP>=-110计数器', 'S_ALL计数器',
+                             'N_MR覆盖率（RSRP>=-110)', 'N_RSRP>=-110计数器', 'N_ALL计数器',
+                             's_RSRP_00', 's_RSRP_01',
+                             's_RSRP_02', 's_RSRP_03', 's_RSRP_04', 's_RSRP_05', 's_RSRP_06', 's_RSRP_07', 's_RSRP_08',
+                             's_RSRP_09', 's_RSRP_10', 's_RSRP_11', 's_RSRP_12', 's_RSRP_13', 's_RSRP_14', 's_RSRP_15',
+                             's_RSRP_16', 's_RSRP_17', 's_RSRP_18', 's_RSRP_19', 's_RSRP_20', 's_RSRP_21', 's_RSRP_22',
+                             's_RSRP_23', 's_RSRP_24', 's_RSRP_25', 's_RSRP_26', 's_RSRP_27', 's_RSRP_28', 's_RSRP_29',
+                             's_RSRP_30', 's_RSRP_31', 's_RSRP_32', 's_RSRP_33', 's_RSRP_34', 's_RSRP_35', 's_RSRP_36',
+                             's_RSRP_37', 's_RSRP_38', 's_RSRP_39', 's_RSRP_40', 's_RSRP_41', 's_RSRP_42', 's_RSRP_43',
+                             's_RSRP_44', 's_RSRP_45', 's_RSRP_46', 's_RSRP_47',
+                             'n_RSRP_00', 'n_RSRP_01', 'n_RSRP_02',
+                             'n_RSRP_03', 'n_RSRP_04', 'n_RSRP_05', 'n_RSRP_06', 'n_RSRP_07', 'n_RSRP_08', 'n_RSRP_09',
+                             'n_RSRP_10', 'n_RSRP_11', 'n_RSRP_12', 'n_RSRP_13', 'n_RSRP_14', 'n_RSRP_15', 'n_RSRP_16',
+                             'n_RSRP_17', 'n_RSRP_18', 'n_RSRP_19', 'n_RSRP_20', 'n_RSRP_21', 'n_RSRP_22', 'n_RSRP_23',
+                             'n_RSRP_24', 'n_RSRP_25', 'n_RSRP_26', 'n_RSRP_27', 'n_RSRP_28', 'n_RSRP_29', 'n_RSRP_30',
+                             'n_RSRP_31', 'n_RSRP_32', 'n_RSRP_33', 'n_RSRP_34', 'n_RSRP_35', 'n_RSRP_36', 'n_RSRP_37',
+                             'n_RSRP_38', 'n_RSRP_39', 'n_RSRP_40', 'n_RSRP_41', 'n_RSRP_42', 'n_RSRP_43', 'n_RSRP_44',
+                             'n_RSRP_45', 'n_RSRP_46', 'n_RSRP_47'])
+                        for temp_report_time in self.mro_data_data['mro'][table]:
+                            for ecid_id in self.mro_data_data['mro'][table][temp_report_time]:
+                                temp_value = self.mro_data_data['mro'][table][temp_report_time][ecid_id]
+                                s_temp_value_1 = sum(temp_value[7:48])
+                                s_temp_value_2 = sum(temp_value[0:48])
+                                if s_temp_value_2 != 0:
+                                    s_temp_value_3 = round(s_temp_value_1 / s_temp_value_2 * 100, 2)
+                                else:
+                                    s_temp_value_3 = '-'
+                                n_temp_value_1 = sum(temp_value[55:])
+                                n_temp_value_2 = sum(temp_value[48:])
+                                if n_temp_value_2 != 0:
+                                    n_temp_value_3 = round(n_temp_value_1 / n_temp_value_2 * 100, 2)
+                                else:
+                                    n_temp_value_3 = '-'
+                                temp_ecid_earfcn = ecid_id.split('_')
+                                temp_enbid = str(int(temp_ecid_earfcn[0]) // 256)
+                                temp_enb_cellid = '_'.join((str(int(temp_ecid_earfcn[0]) // 256), str(int(temp_ecid_earfcn[0]) % 256)))
+                                writer.writerow([temp_day, temp_report_time, temp_ecid_earfcn[0], temp_enbid,
+                                                 temp_enb_cellid,
+                                                 temp_ecid_earfcn[1],
+                                                 s_temp_value_3, s_temp_value_1, s_temp_value_2,
+                                                 n_temp_value_3, n_temp_value_1, n_temp_value_2,
+                                                 ] + list(temp_value))
+
+                elif table == 'mro_earfcn_operator':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(
+                            ['DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', '运营商',
                              'S_MR覆盖率（RSRP>=-110)', 'S_RSRP>=-110计数器', 'S_ALL计数器',
                              'N_MR覆盖率（RSRP>=-110)', 'N_RSRP>=-110计数器', 'N_ALL计数器',
                              's_RSRP_00', 's_RSRP_01',
