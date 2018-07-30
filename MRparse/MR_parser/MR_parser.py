@@ -65,6 +65,7 @@ def copy_right():
     2018-6-13 修复激活MDT时，MRO解码异常bug；
     2018-6-24 添加MDT解码，当mro_parse_sheet设置为mro_rsrp_mdt时，可以生成仅带经纬度的rsrp采样点及经纬度详表；
     2018-7-18 友商竞对MR覆盖率增加按 运营商 进行汇总统计；
+    2018-7-25 添加MDT重叠覆盖解析，当mro_parse_sheet设置为mro_rsrp_mdt时，新增生成mro_mdt_overlap.csv；
 
     ''')
     logging.info(u'-' * 36)
@@ -412,7 +413,7 @@ class Main:
                     overlap_times += 1
 
         # 统计cmcc重叠覆盖率
-        if overlap_times >= 3:
+        if overlap_times >= int(self.config_mro['cmcc_overlap_ncell_num'][0]):
             temp_mro_main[2][10] = 1
 
         # 先汇总，后才传送到queue
@@ -497,52 +498,90 @@ class Main:
 
     def mro_rsrp_mdt(self, mro_object, report_time, enbid):
         ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+        mdt_overlap_list = {
+            's': [],
+            'n': [],
+            'mdt': []
+        }
+        temp_counter = 0
         for value in mro_object.iter('v'):
             temp_value = value.text.rstrip().split(' ')
-            try:
-                if temp_value[27] != 'NIL':
-                    temp_mro_rsrp_mdt = [0] * 48
-                    temp_mro_rsrp_mdt[self.mro_rsrp_list[int(temp_value[0])]] = 1
-                    ecid_long_lat = '_'.join(
-                        (
-                            str(ecid),
-                            temp_value[27],
-                            temp_value[28],
-                            temp_value[0],
-                            temp_value[1],
-                            temp_value[6]
+            if temp_counter == 0:
+                try:
+                    if temp_value[27] != 'NIL':
+                        # 当频点相同时
+                        temp_s_rsrp = int(temp_value[0])-141
+                        if temp_value[7] == temp_value[11] and temp_value[7] != 'NIL':
+                            if temp_s_rsrp >= int(self.config_mro['cmcc_overlap_scell_rsrp'][0]):
+                                temp_counter = 1
+                                mdt_overlap_list['s'] = temp_s_rsrp
+                                mdt_overlap_list['mdt'] = [temp_value[27], temp_value[28], temp_value[7], str(ecid)]
+                                temp_n_rsrp = int(temp_value[9])-141
+                                if temp_s_rsrp - temp_n_rsrp < int(self.config_mro['cmcc_overlap_db'][0]):
+                                    mdt_overlap_list['n'].append(temp_n_rsrp)
+                        else:
+                            temp_counter = 2
+
+                        temp_mro_rsrp_mdt = [0] * 48
+                        temp_mro_rsrp_mdt[self.mro_rsrp_list[int(temp_value[0])]] = 1
+                        ecid_long_lat = '_'.join(
+                            (
+                                str(ecid),
+                                temp_value[27],
+                                temp_value[28],
+                                str(int(temp_value[0])-141),
+                                str(int(temp_value[1])/2-19.5),
+                                str(int(temp_value[6])-11),
+                                str(int(temp_value[2])*78)
+                            )
                         )
-                    )
-                    try:
-                        self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] += numpy.array(temp_mro_rsrp_mdt)
-                    except:
                         try:
-                            self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] = numpy.array(temp_mro_rsrp_mdt)
+                            self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] += numpy.array(temp_mro_rsrp_mdt)
                         except:
                             try:
-                                self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] = numpy.array(temp_mro_rsrp_mdt)
                             except:
-                                self.temp_mro_data[report_time] = {}
-                                self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+                                try:
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+                                except:
+                                    self.temp_mro_data[report_time] = {}
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
 
-                    try:
-                        self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] += numpy.array([1])
-                    except:
                         try:
-                            self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] = numpy.array([1])
+                            self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] += numpy.array([1])
                         except:
                             try:
-                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
-                                                                                               numpy.array([1])}
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] = numpy.array([1])
                             except:
-                                self.temp_mro_data[report_time] = {}
-                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
-                                                                                               numpy.array([1])}
+                                try:
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
+                                                                                                   numpy.array([1])}
+                                except:
+                                    self.temp_mro_data[report_time] = {}
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
+                                                                                                   numpy.array([1])}
 
-            except:
-                pass
-
-            break
+                except:
+                    traceback.print_exc()
+            elif temp_counter == 1:
+                mdt_overlap_list['n'].append(int(temp_value[9]) - 141)
+            elif temp_counter == 2:
+                break
+        if temp_counter == 1:
+            overlap_num = len(mdt_overlap_list['n'])
+            if overlap_num >= int(self.config_mro['cmcc_overlap_ncell_num'][0]):
+                temp_head = '_'.join(mdt_overlap_list['mdt']+[str(mdt_overlap_list['s']), str(overlap_num)])
+                try:
+                    self.temp_mro_data[report_time]['mro_mdt_overlap'][temp_head] += 1
+                except:
+                    try:
+                        self.temp_mro_data[report_time]['mro_mdt_overlap'][temp_head] = 1
+                    except:
+                        try:
+                            self.temp_mro_data[report_time]['mro_mdt_overlap'] = {temp_head: 1}
+                        except:
+                            self.temp_mro_data[report_time] = {}
+                            self.temp_mro_data[report_time]['mro_mdt_overlap'] = {temp_head: 1}
 
     def mro_aoa(self, mro_object, report_time, enbid):
         ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
@@ -1189,8 +1228,8 @@ class Main:
                                                                    temp_day_head,
                                                                    time_type)), 'w', newline='') as csvfile:
                         writer = csv.writer(csvfile)
-                        writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'UELongitude',
-                                         'UELatitude', 'LteScRSRP', 'LteScRSRQ', 'LteScSinrUL', '重复次数'))
+                        writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'CELL_NAME', 'lon',
+                                         'lat', 'SC_RSRP', 'LteScRSRQ', 'LteScSinrUL', 'LteScTadv', 'SAMPLES'))
                         for temp_report_time in self.mro_data_data['mro'][table]:
                             for ecid_id in self.mro_data_data['mro'][table][temp_report_time]:
                                 temp_value = ecid_id.split('_')
@@ -1199,7 +1238,21 @@ class Main:
                                 temp_enb_cellid = '_'.join((str(int(temp_value[0]) // 256),
                                                             str(int(temp_value[0]) % 256)))
                                 writer.writerow([temp_day, temp_report_time, temp_value[0],
-                                                 temp_enbid, temp_enb_cellid] + temp_value[1:] + [temp_value_num,])
+                                                 temp_enbid, temp_enb_cellid, ''] + temp_value[1:] + [temp_value_num, ])
+                elif table == 'mro_mdt_overlap':
+                    with open(os.path.join(self.config_main['target_path'][0],
+                                           '{0}{1}_{2}.csv'.format(table,
+                                                                   temp_day_head,
+                                                                   time_type)), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(('Report_Time', 'UELongitude', 'UELatitude', 'EARFCN', 'ECID', 'S_RSRP',
+                                         '重叠覆盖邻区数','点出现次数'))
+                        for temp_report_time in self.mro_data_data['mro'][table]:
+                            for ecid_id in self.mro_data_data['mro'][table][temp_report_time]:
+                                temp_value = ecid_id.split('_')
+                                writer.writerow([temp_report_time,]+temp_value + [self.mro_data_data['mro'][table][
+                                                                                    temp_report_time][
+                                                                   ecid_id],])
                 elif table == 'mro_aoa':
                     with open(os.path.join(self.config_main['target_path'][0],
                                            '{0}{1}_{2}.csv'.format(table,
