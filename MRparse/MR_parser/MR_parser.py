@@ -83,6 +83,7 @@ def copy_right():
     2018-8-10 新增liscense认证方式认证；
     2018-8-27 修复友商竞对覆盖率统计bug；
     2018-8-27 修复统计 mro_aoa 表时未生成报表bug；
+    2018-9-7 算法优化，处理MRO数据效率提升10%；
 
 
     ''')
@@ -421,41 +422,42 @@ class Main:
 
         """统计mro_main表"""
         temp_id = 1
-        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+        ecid = str(int(enbid)*256 + int(mro_object.attrib['id']) % 256)
         # cmcc重叠覆盖率采集数计数器
         overlap_times = 0
         temp_mro_main = []
         for value in mro_object.iter('v'):
-            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
             if temp_id == 1:
-                ecid_earfcn_pci = '_'.join(map(str, (ecid, temp_value[7], temp_value[8])))
+                ecid_earfcn_pci = '_'.join((ecid, temp_value[7], temp_value[8]))
                 temp_mro_main = ['mro_main',
                                  ecid_earfcn_pci,
-                                 [temp_value[0],
-                                  temp_value[1],
-                                  temp_value[2],
-                                  temp_value[4],
-                                  temp_value[5],
-                                  temp_value[6],
-                                  temp_value[20],
-                                  temp_value[21],
+                                 [int(temp_value[0]),
+                                  int(temp_value[1]),
+                                  int(temp_value[2]),
+                                  int(temp_value[4]),
+                                  int(temp_value[5]),
+                                  int(temp_value[6]),
+                                  int(temp_value[20]),
+                                  int(temp_value[21]),
                                   1,
                                   0,
                                   0,
                                   ]
                                  ]
                 # 统计MR覆盖率
-                if temp_value[0] - int(self.config_mro['mro_rsrp_standard'][0]) >= int(self.config_mro['mr_lap'][0]):
+                if str(temp_value[0]) - int(self.config_mro['mro_rsrp_standard'][0]) >= int(self.config_mro['mr_lap'][
+                                                                                               0]):
                     temp_mro_main[2][9] = 1
 
                 temp_id = 0
 
             if temp_value[7] == temp_value[11]:
-                if temp_value[0] - int(
+                if int(temp_value[0]) - int(
                         self.config_mro['mro_rsrp_standard'][0]
                 ) >= int(
                         self.config_mro['cmcc_overlap_scell_rsrp'][0]
-                ) and temp_value[0] - temp_value[9] <= abs(int(self.config_mro['cmcc_overlap_db'][0])):
+                ) and int(temp_value[0]) - int(temp_value[9]) <= abs(int(self.config_mro['cmcc_overlap_db'][0])):
                     overlap_times += 1
 
         # 统计cmcc重叠覆盖率
@@ -479,26 +481,25 @@ class Main:
 
     def mro_ecid(self, object_mro, report_time, enbid):
         for value in object_mro.iter('v'):
-            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
-            ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
-            ecid_earfcn_pci_n_earfcn_n_pci = '_'.join(map(str, (ecid1,
-                                                                temp_value[7],
-                                                                temp_value[8],
-                                                                temp_value[11],
-                                                                temp_value[12]
-                                                                )
-                                                          )
+            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
+            ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
+            ecid_earfcn_pci_n_earfcn_n_pci = '_'.join((ecid1,
+                                                       temp_value[7],
+                                                       temp_value[8],
+                                                       temp_value[11],
+                                                       temp_value[12]
+                                                       )
                                                       )
-            if temp_value[11] != 0:
+            if temp_value[11] != '0':
                 temp_mro_ecid = ['mro_ecid',
                                  ecid_earfcn_pci_n_earfcn_n_pci,
-                                 [temp_value[0],
-                                  temp_value[2],
-                                  temp_value[9], 1,
+                                 [int(temp_value[0]),
+                                  int(temp_value[2]),
+                                  int(temp_value[9]), 1,
                                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                                   ]
                                  ]
-                srsrp_nrsrp = temp_value[9] - temp_value[0]
+                srsrp_nrsrp = int(temp_value[9]) - int(temp_value[0])
                 if srsrp_nrsrp < -10:
                     srsrp_nrsrp = -11
                 if srsrp_nrsrp > 10:
@@ -543,7 +544,7 @@ class Main:
             break
 
     def mro_rsrp_mdt(self, mro_object, report_time, enbid):
-        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+        ecid = str(int(enbid)*256 + int(mro_object.attrib['id']) % 256)
         mdt_overlap_list = {
             's': [],
             'n': [],
@@ -574,7 +575,7 @@ class Main:
                         temp_ecid_long_lat_value = [0] * 3
                         ecid_long_lat = '_'.join(
                             (
-                                str(ecid),
+                                ecid,
                                 temp_value[27],
                                 temp_value[28],
                                 str(int(temp_value[0])-141),
@@ -586,14 +587,14 @@ class Main:
                         temp_ecid_long_lat_value[0] = 1
                         try:
                             temp_ue_azi = Geodesic.WGS84.Inverse(
-                                float(self.mro_ecid_lon_lat_azi[str(ecid)][1]),
-                                float(self.mro_ecid_lon_lat_azi[str(ecid)][0]),
+                                float(self.mro_ecid_lon_lat_azi[ecid][1]),
+                                float(self.mro_ecid_lon_lat_azi[ecid][0]),
                                 float(temp_value[28]), float(temp_value[27])
                             )['azi2']
                             # if temp_ue_azi < 0:
                             #     temp_ue_azi = 360+temp_ue_azi
                             # print(temp_ue_azi)
-                            temp_enb_azi = float(self.mro_ecid_lon_lat_azi[str(ecid)][2])
+                            temp_enb_azi = float(self.mro_ecid_lon_lat_azi[ecid][2])
                             if temp_enb_azi > 180:
                                 temp_enb_azi = temp_enb_azi - 360
                             if (temp_enb_azi > 0 and temp_ue_azi > 0) or (temp_enb_azi < 0 and temp_ue_azi < 0):
@@ -601,13 +602,13 @@ class Main:
                             else:
                                 temp_azi_off_1 = abs(temp_enb_azi - temp_ue_azi)
                                 temp_azi_off_2 = abs(temp_enb_azi + temp_ue_azi)
-                                temp_azi_off = max(temp_azi_off_1,temp_azi_off_2)
+                                temp_azi_off = max(temp_azi_off_1, temp_azi_off_2)
                                 if temp_azi_off > 180:
                                     temp_azi_off = 360-temp_azi_off
                             # 计算距离
                             ue_distance = self.distance(
-                                float(self.mro_ecid_lon_lat_azi[str(ecid)][0]),
-                                float(self.mro_ecid_lon_lat_azi[str(ecid)][1]),
+                                float(self.mro_ecid_lon_lat_azi[ecid][0]),
+                                float(self.mro_ecid_lon_lat_azi[ecid][1]),
                                 float(temp_value[27]), float(temp_value[28])
                             )
                             if temp_azi_off > float(self.config_mro['azi_offset'][0]) and ue_distance > float(
@@ -674,7 +675,7 @@ class Main:
         try:
             ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
             for value in mro_object.iter('v'):
-                temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
+                temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
                 temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -751,15 +752,16 @@ class Main:
     #                             temp_mro_earfcn[2])
 
     def mro_earfcn(self, object_mro, report_time, enbid):
-        ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
+        ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
         temp_value_list = []
         temp_mro_earfcn = [0] * 96
         temp_mro_earfcn_operator = [0] * 96
         temp_value_operator = ''
         for value in object_mro.iter('v'):
-            temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
+            # temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
+            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
             temp_value_operator = copy.deepcopy(temp_value)
-            if temp_value[11] != 0:
+            if temp_value[11] != '0':
                 temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[9])]+48] += 1
                 temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[0])]] += 1
                 temp_value_list.append(int(temp_value[9]))
@@ -770,11 +772,11 @@ class Main:
             temp_mro_earfcn_operator[self.mro_rsrp_list[max(temp_value_list)]+48] = 1
             temp_mro_earfcn_operator[self.mro_rsrp_list[int(temp_value_operator[0])]] = 1
 
-            ecid_earfcn = '_'.join(map(str, (ecid1, temp_value_operator[11])))
+            ecid_earfcn = '_'.join((ecid1, temp_value_operator[11]))
             try:
-                ecid_operator = '_'.join(map(str, (ecid1, self.config_mro['operator_list'][int(temp_value_operator[11])])))
+                ecid_operator = '_'.join((ecid1, str(self.config_mro['operator_list'][int(temp_value_operator[11])])))
             except:
-                ecid_operator = '_'.join(map(str, (ecid1, '其它')))
+                ecid_operator = '_'.join((ecid1, '其它'))
 
             try:
                 self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] += numpy.array(temp_mro_earfcn)
