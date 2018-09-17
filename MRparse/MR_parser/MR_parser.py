@@ -84,6 +84,7 @@ def copy_right():
     2018-8-27 修复友商竞对覆盖率统计bug；
     2018-8-27 修复统计 mro_aoa 表时未生成报表bug；
     2018-9-7 算法优化，处理MRO数据效率提升10%；
+    2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
 
 
     ''')
@@ -527,20 +528,23 @@ class Main:
         ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         for value in mro_object.iter('v'):
             temp_value = value.text.rstrip().split(' ')
-            temp_mro_rsrp = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-            temp_mro_rsrp[self.mro_rsrp_list[int(temp_value[0])]] = 1
+            # print(temp_value)
+            temp_mro_rsrp = numpy.zeros(48)
             try:
-                self.temp_mro_data[report_time]['mro_rsrp'][ecid] += numpy.array(temp_mro_rsrp)
+                temp_mro_rsrp[self.mro_rsrp_list[int(temp_value[0])]] = 1
+            except:
+                continue
+            try:
+                self.temp_mro_data[report_time]['mro_rsrp'][ecid] += temp_mro_rsrp
             except:
                 try:
-                    self.temp_mro_data[report_time]['mro_rsrp'][ecid] = numpy.array(temp_mro_rsrp)
+                    self.temp_mro_data[report_time]['mro_rsrp'][ecid] = temp_mro_rsrp
                 except:
                     try:
-                        self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: numpy.array(temp_mro_rsrp)}
+                        self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: temp_mro_rsrp}
                     except:
                         self.temp_mro_data[report_time] = {}
-                        self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: numpy.array(temp_mro_rsrp)}
+                        self.temp_mro_data[report_time]['mro_rsrp'] = {ecid: temp_mro_rsrp}
             break
 
     def mro_rsrp_mdt(self, mro_object, report_time, enbid):
@@ -569,10 +573,12 @@ class Main:
                         else:
                             temp_counter = 2
 
-                        temp_mro_rsrp_mdt = [0] * 50
+                        # temp_mro_rsrp_mdt = [0] * 50
+                        temp_mro_rsrp_mdt = numpy.zeros(50)
                         temp_mro_rsrp_mdt[self.mro_rsrp_list[int(temp_value[0])]] = 1
 
-                        temp_ecid_long_lat_value = [0] * 3
+                        # temp_ecid_long_lat_value = [0] * 3
+                        temp_ecid_long_lat_value = numpy.zeros(3)
                         ecid_long_lat = '_'.join(
                             (
                                 ecid,
@@ -622,30 +628,30 @@ class Main:
                             pass
                             # traceback.print_exc()
                         try:
-                            self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] += numpy.array(temp_mro_rsrp_mdt)
+                            self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] += temp_mro_rsrp_mdt
                         except:
                             try:
-                                self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] = numpy.array(temp_mro_rsrp_mdt)
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt'][ecid] = temp_mro_rsrp_mdt
                             except:
                                 try:
-                                    self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: temp_mro_rsrp_mdt}
                                 except:
                                     self.temp_mro_data[report_time] = {}
-                                    self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: numpy.array(temp_mro_rsrp_mdt)}
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt'] = {ecid: temp_mro_rsrp_mdt}
 
                         try:
-                            self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] += numpy.array(temp_ecid_long_lat_value)
+                            self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] += temp_ecid_long_lat_value
                         except:
                             try:
-                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] = numpy.array(temp_ecid_long_lat_value)
+                                self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] = temp_ecid_long_lat_value
                             except:
                                 try:
                                     self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
-                                                                                                   numpy.array(temp_ecid_long_lat_value)}
+                                                                                                   temp_ecid_long_lat_value}
                                 except:
                                     self.temp_mro_data[report_time] = {}
                                     self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
-                                                                                                   numpy.array(temp_ecid_long_lat_value)}
+                                                                                                   temp_ecid_long_lat_value}
                     else:
                         break
                 except:
@@ -676,21 +682,22 @@ class Main:
             ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
             for value in mro_object.iter('v'):
                 temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
-                temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                temp_mro_aoa = numpy.zeros(72)
+                # temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                #                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                #                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                 temp_mro_aoa[int(temp_value[5])//10] = 1
                 try:
-                    self.temp_mro_data[report_time]['mro_aoa'][ecid] += numpy.array(temp_mro_aoa)
+                    self.temp_mro_data[report_time]['mro_aoa'][ecid] += temp_mro_aoa
                 except:
                     try:
-                        self.temp_mro_data[report_time]['mro_aoa'][ecid] = numpy.array(temp_mro_aoa)
+                        self.temp_mro_data[report_time]['mro_aoa'][ecid] = temp_mro_aoa
                     except:
                         try:
-                            self.temp_mro_data[report_time]['mro_aoa'] = {ecid: numpy.array(temp_mro_aoa)}
+                            self.temp_mro_data[report_time]['mro_aoa'] = {ecid: temp_mro_aoa}
                         except:
                             self.temp_mro_data[report_time] = {}
-                            self.temp_mro_data[report_time]['mro_aoa'] = {ecid: numpy.array(temp_mro_aoa)}
+                            self.temp_mro_data[report_time]['mro_aoa'] = {ecid: temp_mro_aoa}
                 break
         except:
             # traceback.print_exc()
@@ -699,7 +706,7 @@ class Main:
     def mro_report(self, mro_object, report_time, enbid):
         ecid = int(enbid) * 256 + int(mro_object.attrib['id']) % 256
         temp_value_earfcn = 0
-        temp_value_num = [0, 0, 0, 0, 0]
+        temp_value_num = numpy.zeros(5)
         for value in mro_object.iter('v'):
             temp_value = value.text.rstrip().split(' ')
             if temp_value[11] != 'NIL':
@@ -710,101 +717,70 @@ class Main:
             temp_value_earfcn = 4
         temp_value_num[temp_value_earfcn] = 1
         try:
-            self.temp_mro_data[report_time]['mro_report_num'][ecid] += numpy.array(temp_value_num)
+            self.temp_mro_data[report_time]['mro_report_num'][ecid] += temp_value_num
         except:
             try:
-                self.temp_mro_data[report_time]['mro_report_num'][ecid] = numpy.array(temp_value_num)
+                self.temp_mro_data[report_time]['mro_report_num'][ecid] = temp_value_num
             except:
                 try:
-                    self.temp_mro_data[report_time]['mro_report_num'] = {ecid: numpy.array(temp_value_num)}
+                    self.temp_mro_data[report_time]['mro_report_num'] = {ecid: temp_value_num}
                 except:
                     self.temp_mro_data[report_time] = {}
-                    self.temp_mro_data[report_time]['mro_report_num'] = {ecid: numpy.array(temp_value_num)}
-
-    # def mro_earfcn(self, object_mro, report_time, enbid):
-    #     for value in object_mro.iter('v'):
-    #         temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
-    #         ecid1 = int(enbid) * 256 + int(object_mro.attrib['id']) % 256
-    #         ecid_earfcn = '_'.join(map(str, (ecid1, temp_value[11])))
-    #         if temp_value[11] != 0:
-    #             temp_mro_earfcn = ['mro_earfcn',
-    #                                ecid_earfcn,
-    #                                [0] * 96
-    #                                ]
-    #             temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[0])]] = 1
-    #             temp_mro_earfcn[2][self.mro_rsrp_list[int(temp_value[9])]+48] = 1
-    #             # 先汇总，后才传送到queue
-    #             try:
-    #                 self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] += numpy.array(temp_mro_earfcn[2])
-    #             except:
-    #                 try:
-    #                     self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
-    #                         temp_mro_earfcn[2])
-    #                 except:
-    #                     try:
-    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
-    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
-    #                             temp_mro_earfcn[2])
-    #                     except:
-    #                         self.temp_mro_data[report_time] = {}
-    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]] = {}
-    #                         self.temp_mro_data[report_time][temp_mro_earfcn[0]][temp_mro_earfcn[1]] = numpy.array(
-    #                             temp_mro_earfcn[2])
+                    self.temp_mro_data[report_time]['mro_report_num'] = {ecid: temp_value_num}
 
     def mro_earfcn(self, object_mro, report_time, enbid):
         ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
         temp_value_list = []
-        temp_mro_earfcn = [0] * 96
-        temp_mro_earfcn_operator = [0] * 96
-        temp_value_operator = ''
+        temp_mro_earfcn = numpy.zeros(96)
+        temp_mro_earfcn_operator = numpy.zeros(96)
         for value in object_mro.iter('v'):
-            # temp_value = list(map(float, value.text.rstrip().replace('NIL', '0').split(' ')))
             temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
-            temp_value_operator = copy.deepcopy(temp_value)
             if temp_value[11] != '0':
-                temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[9])]+48] += 1
-                temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[0])]] += 1
                 temp_value_list.append(int(temp_value[9]))
             else:
                 break
 
         if len(temp_value_list) != 0:
-            temp_mro_earfcn_operator[self.mro_rsrp_list[max(temp_value_list)]+48] = 1
-            temp_mro_earfcn_operator[self.mro_rsrp_list[int(temp_value_operator[0])]] = 1
+            max_temp_value_list = max(temp_value_list)
+            temp_mro_earfcn[self.mro_rsrp_list[max_temp_value_list] + 48] += 1
+            temp_mro_earfcn[self.mro_rsrp_list[int(temp_value[0])]] += 1
 
-            ecid_earfcn = '_'.join((ecid1, temp_value_operator[11]))
+            temp_mro_earfcn_operator[self.mro_rsrp_list[max_temp_value_list]+48] = 1
+            temp_mro_earfcn_operator[self.mro_rsrp_list[int(temp_value[0])]] = 1
+
+            ecid_earfcn = '_'.join((ecid1, temp_value[11]))
             try:
-                ecid_operator = '_'.join((ecid1, str(self.config_mro['operator_list'][int(temp_value_operator[11])])))
+                ecid_operator = '_'.join((ecid1, str(self.config_mro['operator_list'][int(temp_value[11])])))
             except:
                 ecid_operator = '_'.join((ecid1, '其它'))
 
             try:
-                self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] += numpy.array(temp_mro_earfcn)
+                self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] += temp_mro_earfcn
             except:
                 try:
-                    self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = numpy.array(temp_mro_earfcn)
+                    self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = temp_mro_earfcn
                 except:
                     try:
                         self.temp_mro_data[report_time]['mro_earfcn'] = {}
-                        self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = numpy.array(temp_mro_earfcn)
+                        self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = temp_mro_earfcn
                     except:
                         self.temp_mro_data[report_time] = {}
                         self.temp_mro_data[report_time]['mro_earfcn'] = {}
-                        self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = numpy.array(temp_mro_earfcn)
+                        self.temp_mro_data[report_time]['mro_earfcn'][ecid_earfcn] = temp_mro_earfcn
 
             try:
-                self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] += numpy.array(temp_mro_earfcn_operator)
+                self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] += temp_mro_earfcn_operator
             except:
                 try:
-                    self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = numpy.array(temp_mro_earfcn_operator)
+                    self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = temp_mro_earfcn_operator
                 except:
                     try:
                         self.temp_mro_data[report_time]['mro_earfcn_operator'] = {}
-                        self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = numpy.array(temp_mro_earfcn_operator)
+                        self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = temp_mro_earfcn_operator
                     except:
                         self.temp_mro_data[report_time] = {}
                         self.temp_mro_data[report_time]['mro_earfcn_operator'] = {}
-                        self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = numpy.array(temp_mro_earfcn_operator)
+                        self.temp_mro_data[report_time]['mro_earfcn_operator'][ecid_operator] = temp_mro_earfcn_operator
 
     def get_report_time(self, tree):
 
@@ -931,7 +907,8 @@ class Main:
                                     if self.filter(temp_file, 'tar_gz') == 1:
                                         tree = ET.parse(gzip.open(temp_file_tar_f))
                                         self.parser(tree, mr_type, queue, ishead)
-                                        tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                        if self.config_filter['extract_source_file'] == ['1']:
+                                            tar_f.extract(temp_file, self.config_main['target_path'][0])
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
 
@@ -945,7 +922,8 @@ class Main:
                                     if self.filter(temp_file, 'tar_gz') == 1:
                                         tree = ET.parse(temp_file_tar_f)
                                         self.parser(tree, mr_type, queue, ishead)
-                                        tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                        if self.config_filter['extract_source_file'] == ['1']:
+                                            tar_f.extract(temp_file, self.config_main['target_path'][0])
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                         except:
