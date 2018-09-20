@@ -18,7 +18,6 @@ import openpyxl
 from geographiclib.geodesic import Geodesic
 import base64
 import pyDes
-import copy
 
 
 def copy_right():
@@ -83,9 +82,10 @@ def copy_right():
     2018-8-10 新增liscense认证方式认证；
     2018-8-27 修复友商竞对覆盖率统计bug；
     2018-8-27 修复统计 mro_aoa 表时未生成报表bug；
-    2018-9-7 算法优化，处理MRO数据效率提升10%；
+    2018-9-7 算法优化；
     2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
     2018-9-18 优化数据生成流程，解决数据量过大时保存数据结果出错bug；
+    2018-9-20 算法优化；
 
 
     ''')
@@ -127,7 +127,6 @@ if sys.platform.startswith('win'):
                         os.unsetenv('_MEIPASS2')
                     else:
                         os.putenv('_MEIPASS2', '')
-
 
     # Second override 'Popen' class with our modified version.
     forking.Popen = _Popen
@@ -182,13 +181,13 @@ class Main:
 
         # process设置
         if self.config_main['process'][0] == 'min':
-            self.config_main['process'][0] = '2'
+            self.config_main['process'][0] = '1'
         elif self.config_main['process'][0] == 'mid':
-            self.config_main['process'][0] = int(multiprocessing.cpu_count() / 2 + 1)
+            self.config_main['process'][0] = int(multiprocessing.cpu_count() / 2)
         elif self.config_main['process'][0] in ['max', '', '0']:
-            self.config_main['process'][0] = int(multiprocessing.cpu_count())
-        if self.config_main['process'][0] in ['1', 1]:
-            self.config_main['process'][0] = '2'
+            self.config_main['process'][0] = int(multiprocessing.cpu_count()-1)
+        if self.config_main['process'][0] in ['0', 0]:
+            self.config_main['process'][0] = '1'
 
         """获取 filter 配置文件"""
         for a in self.cf.options('filter'):
@@ -275,7 +274,7 @@ class Main:
                 for temp_sheet_name in f_base_data_wb.sheetnames:
                     if temp_sheet_name == '频点运营商对应关系':
                         temp_f_base_data_wb_sheet = f_base_data_wb[temp_sheet_name]
-                        temp_head = []
+                        # temp_head = []
                         for temp_row in temp_f_base_data_wb_sheet.iter_rows():
                             temp_value = [j.value for j in temp_row]
                             self.config_mro['operator_list'][temp_value[0]] = temp_value[2]
@@ -313,8 +312,9 @@ class Main:
                 source_path = os.path.join(root, temp_file)
                 # 2017年5月4日新增过滤器过滤优化字段
                 if self.config_filter['active_filter'] == ['1']:
-                    if temp_file[-6:] == 'tar.gz' and (temp_file[-13:-11] in self.config_filter['filter_hour'] or
-                                                               self.config_filter['filter_hour'] == ['']):
+                    if temp_file[-6:] == 'tar.gz' and (
+                                    temp_file[-13:-11] in self.config_filter['filter_hour'] or self.config_filter['filter_hour'] == ['']
+                    ):
                         self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
                 else:
                     self.parse_file_list[temp_file_plus[1]][file_type].append(source_path)
@@ -652,12 +652,14 @@ class Main:
                                 self.temp_mro_data[report_time]['mro_rsrp_mdt_details'][ecid_long_lat] = temp_ecid_long_lat_value
                             except:
                                 try:
-                                    self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
-                                                                                                   temp_ecid_long_lat_value}
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {
+                                        ecid_long_lat: temp_ecid_long_lat_value
+                                    }
                                 except:
                                     self.temp_mro_data[report_time] = {}
-                                    self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {ecid_long_lat:
-                                                                                                   temp_ecid_long_lat_value}
+                                    self.temp_mro_data[report_time]['mro_rsrp_mdt_details'] = {
+                                        ecid_long_lat: temp_ecid_long_lat_value
+                                    }
                     else:
                         break
                 except:
@@ -800,7 +802,8 @@ class Main:
                 break
         return report_time
 
-    def get_enbid(self, tree):
+    @staticmethod
+    def get_enbid(tree):
 
         """获取enbid"""
         enbid = ''
@@ -832,20 +835,19 @@ class Main:
         # temp_j 为待处理文件
         process_manager = multiprocessing.Manager()
         process_queue = process_manager.Queue()
-        # process_lock = process_manager.Lock()
+
+        process_listen = multiprocessing.Process(target=self.listen, args=(process_queue, mr_type,))
+        process_listen.start()
+
         process_pool = multiprocessing.Pool(processes=int(self.config_main['process'][0]))
-        process_listen = process_pool.apply_async(self.listen, args=(process_queue, mr_type,))
-        jobs = []
         for n in self.parse_file_list[mr_type]:
             for o in self.parse_file_list[mr_type][n]:
-                job = process_pool.apply_async(self.child_parse_process, args=(mr_type, n, o, process_queue))
-                jobs.append(job)
-        for job in jobs:
-            job.get()
-
-        process_queue.put('all_finish')
+                process_pool.apply_async(self.child_parse_process, args=(mr_type, n, o, process_queue))
         process_pool.close()
         process_pool.join()
+
+        process_queue.put('all_finish')
+        process_listen.join()
 
     def filter(self, file_name, type_filter):
         filter_id = self.config_filter['filter_id']
@@ -1031,7 +1033,8 @@ class Main:
                             head_temp = smr.text.replace('.', '_').rstrip().split(' ')
                             self.mrs_head[temp_table_name] = head_temp
 
-    def queue_send(self, queue, data):
+    @staticmethod
+    def queue_send(queue, data):
         for temp_report_time in data:
             for temp_table in data[temp_report_time]:
                 for temp_ecid in data[temp_report_time][temp_table]:
@@ -1079,8 +1082,9 @@ class Main:
         #                   }
         #       }
         temp_count = 1
-        self.all_list = {'mrs': {},
-                    'mro': {}
+        self.all_list = {
+            'mrs': {},
+            'mro': {}
                     }
         num_ii = 0
         self.progress(self.all_num[mr_type], num_ii)
@@ -1408,9 +1412,9 @@ class Main:
                         for temp_report_time in self.all_list['mro'][table]:
                             for ecid_id in self.all_list['mro'][table][temp_report_time]:
                                 temp_value = ecid_id.split('_')
-                                writer.writerow([temp_report_time,]+temp_value + [self.all_list['mro'][table][
-                                                                                    temp_report_time][
-                                                                   ecid_id],])
+                                writer.writerow(
+                                    [temp_report_time, ] + temp_value + [self.all_list['mro'][table][temp_report_time][ecid_id],]
+                                )
                 elif table == 'mro_aoa':
                     with open(os.path.join(self.config_main['target_path'][0],
                                            '{0}{1}_{2}.csv'.format(table,
