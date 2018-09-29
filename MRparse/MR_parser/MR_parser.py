@@ -18,6 +18,7 @@ import openpyxl
 from geographiclib.geodesic import Geodesic
 import base64
 import pyDes
+# import pyproj
 
 
 def copy_right():
@@ -86,6 +87,7 @@ def copy_right():
     2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
     2018-9-18 优化数据生成流程，解决数据量过大时保存数据结果出错bug；
     2018-9-20 算法优化；
+    018-9-29 算法优化；2
 
 
     ''')
@@ -425,12 +427,13 @@ class Main:
         """统计mro_main表"""
         try:
             temp_id = 1
-            ecid = str(int(enbid)*256 + int(mro_object.attrib['id']) % 256)
+            # ecid = str(int(enbid)*256 + int(mro_object.attrib['id']) % 256)
+            ecid = mro_object.attrib['id']
             # cmcc重叠覆盖率采集数计数器
             overlap_times = 0
             temp_mro_main = []
             for value in mro_object.iter('v'):
-                temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
+                temp_value = value.text.replace('NIL', '0').split()
                 if temp_id == 1:
                     ecid_earfcn_pci = '_'.join((ecid, temp_value[7], temp_value[8]))
                     temp_mro_main = ['mro_main',
@@ -488,8 +491,9 @@ class Main:
 
     def mro_ecid(self, object_mro, report_time, enbid):
         for value in object_mro.iter('v'):
-            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
-            ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
+            temp_value = value.text.replace('NIL', '0').split()
+            # ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
+            ecid1 = object_mro.attrib['id']
             ecid_earfcn_pci_n_earfcn_n_pci = '_'.join((ecid1,
                                                        temp_value[7],
                                                        temp_value[8],
@@ -531,9 +535,10 @@ class Main:
                                 temp_mro_ecid[2])
 
     def mro_rsrp(self, mro_object, report_time, enbid):
-        ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+        # ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+        ecid = mro_object.attrib['id']
         for value in mro_object.iter('v'):
-            temp_value = value.text.rstrip().split(' ')
+            temp_value = value.text.split()
             # print(temp_value)
             temp_mro_rsrp = numpy.zeros(48)
             try:
@@ -554,7 +559,8 @@ class Main:
             break
 
     def mro_rsrp_mdt(self, mro_object, report_time, enbid):
-        ecid = str(int(enbid)*256 + int(mro_object.attrib['id']) % 256)
+        # ecid = str(int(enbid)*256 + int(mro_object.attrib['id']) % 256)
+        ecid = mro_object.attrib['id']
         mdt_overlap_list = {
             's': [],
             'n': [],
@@ -562,7 +568,7 @@ class Main:
         }
         temp_counter = 0
         for value in mro_object.iter('v'):
-            temp_value = value.text.rstrip().split(' ')
+            temp_value = value.text.split()
             if temp_counter == 0:
                 try:
                     if temp_value[27] != 'NIL':
@@ -603,9 +609,14 @@ class Main:
                                 float(self.mro_ecid_lon_lat_azi[ecid][0]),
                                 float(temp_value[28]), float(temp_value[27])
                             )['azi2']
-                            # if temp_ue_azi < 0:
-                            #     temp_ue_azi = 360+temp_ue_azi
-                            # print(temp_ue_azi)
+
+                            # g = pyproj.Geod(ellps='WGS84')
+                            # temp_ue_azi = g.inv(
+                            #     float(self.mro_ecid_lon_lat_azi[ecid][1]),
+                            #     float(self.mro_ecid_lon_lat_azi[ecid][0]),
+                            #     float(temp_value[28]), float(temp_value[27])
+                            # )[0]
+
                             temp_enb_azi = float(self.mro_ecid_lon_lat_azi[ecid][2])
                             if temp_enb_azi > 180:
                                 temp_enb_azi = temp_enb_azi - 360
@@ -687,9 +698,10 @@ class Main:
 
     def mro_aoa(self, mro_object, report_time, enbid):
         try:
-            ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+            # ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
+            ecid = mro_object.attrib['id']
             for value in mro_object.iter('v'):
-                temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
+                temp_value = value.text.split()
                 temp_mro_aoa = numpy.zeros(72)
                 # temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 #                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -712,7 +724,8 @@ class Main:
             pass
 
     def mro_report(self, mro_object, report_time, enbid):
-        ecid = int(enbid) * 256 + int(mro_object.attrib['id']) % 256
+        # ecid = int(enbid) * 256 + int(mro_object.attrib['id']) % 256
+        ecid = mro_object.attrib['id']
         temp_value_earfcn = 0
         temp_value_num = numpy.zeros(5)
         for value in mro_object.iter('v'):
@@ -737,13 +750,14 @@ class Main:
                     self.temp_mro_data[report_time]['mro_report_num'] = {ecid: temp_value_num}
 
     def mro_earfcn(self, object_mro, report_time, enbid):
-        ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
+        # ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
+        ecid1 = object_mro.attrib['id']
         temp_value_list = []
         temp_mro_earfcn = numpy.zeros(96)
         temp_mro_earfcn_operator = numpy.zeros(96)
         for value in object_mro.iter('v'):
-            temp_value = value.text.rstrip().replace('NIL', '0').split(' ')
-            if temp_value[11] != '0':
+            temp_value = value.text.split()
+            if temp_value[11] != 'NIL':
                 temp_value_list.append(int(temp_value[9]))
             else:
                 break
@@ -873,94 +887,99 @@ class Main:
     def child_parse_process(self, mr_type, file_type, file_name, queue='', ishead=0):
 
         """文件格式判断、解压、parse xml"""
-        log_file_child_num = 0
-        log_file_child_list = []
-        if file_type == 'xml':
-            try:
-                if self.config_filter['active_filter'] != ['1']:
-                    tree = ET.parse(file_name)
-                    self.parser(tree, mr_type, queue, ishead)
-                    log_file_child_num += 1
-                    log_file_child_list.append(file_name)
-                else:
-                    if self.filter(file_name, 'xml') == 1:
+        try:
+            # print('>>{0}<<'.format(os.getpid()))
+            log_file_child_num = 0
+            log_file_child_list = []
+            if file_type == 'xml':
+                try:
+                    if self.config_filter['active_filter'] != ['1']:
                         tree = ET.parse(file_name)
                         self.parser(tree, mr_type, queue, ishead)
                         log_file_child_num += 1
                         log_file_child_list.append(file_name)
-            except:
-                pass
-                # traceback.print_exc()
+                    else:
+                        if self.filter(file_name, 'xml') == 1:
+                            tree = ET.parse(file_name)
+                            self.parser(tree, mr_type, queue, ishead)
+                            log_file_child_num += 1
+                            log_file_child_list.append(file_name)
+                except:
+                    pass
+                    # traceback.print_exc()
 
-        elif file_type == 'gz':
-            try:
+            elif file_type == 'gz':
                 try:
-                    tar_f = tarfile.open(file_name)
-                    for temp_file in tar_f.getnames():
-                        try:
-                            temp_file_tar_f = tar_f.extractfile(temp_file)
-                            temp_file_suffix = temp_file.split('.')[-1].lower()
-                            if temp_file_suffix == 'gz':
-                                if self.config_filter['active_filter'] != ['1']:
-                                    tree = ET.parse(gzip.open(temp_file_tar_f))
-                                    self.parser(tree, mr_type, queue, ishead)
-                                    log_file_child_num += 1
-                                    log_file_child_list.append(temp_file)
-                                else:
-                                    if self.filter(temp_file, 'tar_gz') == 1:
+                    try:
+                        tar_f = tarfile.open(file_name)
+                        for temp_file in tar_f.getnames():
+                            try:
+                                temp_file_tar_f = tar_f.extractfile(temp_file)
+                                temp_file_suffix = temp_file.split('.')[-1].lower()
+                                if temp_file_suffix == 'gz':
+                                    if self.config_filter['active_filter'] != ['1']:
                                         tree = ET.parse(gzip.open(temp_file_tar_f))
                                         self.parser(tree, mr_type, queue, ishead)
-                                        if self.config_filter['extract_source_file'] == ['1']:
-                                            tar_f.extract(temp_file, self.config_main['target_path'][0])
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
+                                    else:
+                                        if self.filter(temp_file, 'tar_gz') == 1:
+                                            tree = ET.parse(gzip.open(temp_file_tar_f))
+                                            self.parser(tree, mr_type, queue, ishead)
+                                            if self.config_filter['extract_source_file'] == ['1']:
+                                                tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                            log_file_child_num += 1
+                                            log_file_child_list.append(temp_file)
 
-                            elif temp_file_suffix == 'xml':
-                                if self.config_filter['active_filter'] != ['1']:
-                                    tree = ET.parse(temp_file_tar_f)
-                                    self.parser(tree, mr_type, queue, ishead)
-                                    log_file_child_num += 1
-                                    log_file_child_list.append(temp_file)
-                                else:
-                                    if self.filter(temp_file, 'tar_gz') == 1:
+                                elif temp_file_suffix == 'xml':
+                                    if self.config_filter['active_filter'] != ['1']:
                                         tree = ET.parse(temp_file_tar_f)
                                         self.parser(tree, mr_type, queue, ishead)
-                                        if self.config_filter['extract_source_file'] == ['1']:
-                                            tar_f.extract(temp_file, self.config_main['target_path'][0])
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
-                        except:
-                            pass
-                            # traceback.print_exc()
+                                    else:
+                                        if self.filter(temp_file, 'tar_gz') == 1:
+                                            tree = ET.parse(temp_file_tar_f)
+                                            self.parser(tree, mr_type, queue, ishead)
+                                            if self.config_filter['extract_source_file'] == ['1']:
+                                                tar_f.extract(temp_file, self.config_main['target_path'][0])
+                                            log_file_child_num += 1
+                                            log_file_child_list.append(temp_file)
+                            except:
+                                pass
+                                # traceback.print_exc()
 
-                    tar_f.close()
-                except:
-                    # traceback.print_exc()
-                    gzip_file = gzip.open(file_name)
-                    if self.config_filter['active_filter'] != ['1']:
-                        tree = ET.parse(gzip_file)
-                        self.parser(tree, mr_type, queue, ishead)
-                        log_file_child_num += 1
-                        log_file_child_list.append(file_name)
-                    else:
-                        if self.filter(file_name, 'gz') == 1:
+                        tar_f.close()
+                    except:
+                        # traceback.print_exc()
+                        gzip_file = gzip.open(file_name)
+                        if self.config_filter['active_filter'] != ['1']:
                             tree = ET.parse(gzip_file)
                             self.parser(tree, mr_type, queue, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
-            except:
-                pass
-                # traceback.print_exc()
+                        else:
+                            if self.filter(file_name, 'gz') == 1:
+                                tree = ET.parse(gzip_file)
+                                self.parser(tree, mr_type, queue, ishead)
+                                log_file_child_num += 1
+                                log_file_child_list.append(file_name)
+                except:
+                    pass
+                    # traceback.print_exc()
 
-        # 数据送到queue
-        if ishead == 0:
-            type_list = {'mrs': self.temp_mrs_data,
-                         'mro': self.temp_mro_data}
-            self.queue_send(queue, type_list[mr_type])
-            # 发送进度条及文件名称，为log；
-            # queue.put('prog')
-            queue.put(['prog', mr_type, file_name, log_file_child_num, log_file_child_list])
-            type_list[mr_type] = {}
+            # 数据送到queue
+            if ishead == 0:
+                type_list = {'mrs': self.temp_mrs_data,
+                             'mro': self.temp_mro_data}
+                self.queue_send(queue, type_list[mr_type])
+                # 发送进度条及文件名称，为log；
+                # queue.put('prog')
+                queue.put(['prog', mr_type, file_name, log_file_child_num, log_file_child_list])
+                type_list[mr_type] = {}
+        except:
+            print('parser:{0}<<'.format(os.getpid()))
+            traceback.print_exc()
 
     def parser(self, tree, mr_type, queue, ishead):
         if ishead == 0:
@@ -1035,16 +1054,21 @@ class Main:
 
     @staticmethod
     def queue_send(queue, data):
-        for temp_report_time in data:
-            for temp_table in data[temp_report_time]:
-                for temp_ecid in data[temp_report_time][temp_table]:
-                    queue.put(['data', [temp_report_time,
-                                        temp_table,
-                                        temp_ecid,
-                                        data[temp_report_time][temp_table][temp_ecid]
-                                        ]
-                               ]
-                              )
+        try:
+            for temp_report_time in data:
+                for temp_table in data[temp_report_time]:
+                    for temp_ecid in data[temp_report_time][temp_table]:
+                        queue.put(['data', [temp_report_time,
+                                            temp_table,
+                                            temp_ecid,
+                                            data[temp_report_time][temp_table][temp_ecid]
+                                            ]
+                                   ]
+                                  )
+        except:
+            print('parser:{0}<<'.format(os.getpid()))
+            print(data)
+            traceback.print_exc()
 
     def gather(self, mr_type):
         gather_data = {'mrs': {},
@@ -1081,71 +1105,76 @@ class Main:
         #               {ecid:[值1，值2，......]
         #                   }
         #       }
-        temp_count = 1
-        self.all_list = {
-            'mrs': {},
-            'mro': {}
-                    }
-        num_ii = 0
-        self.progress(self.all_num[mr_type], num_ii)
-        # 生成log文件
-        f_log_csv = open(''.join((self.config_main['target_path'][0],
-                                  '/LOG_Parse_File_List.csv'
-                                  )), 'a', encoding='utf-8-sig'
-                         )
-        while temp_count:
-            value = queue.get()
-            if value[0] == 'data':
-                report_time = value[1][0]
-                table_name = value[1][1]
-                table_id = value[1][2]
-                table_value = numpy.array(value[1][3])
-                try:
-                    self.all_list[mr_type][table_name][report_time][table_id] += table_value
-                except:
+        try:
+            print('>>listen:{0}<<'.format(os.getpid()))
+            temp_count = 1
+            self.all_list = {
+                'mrs': {},
+                'mro': {}
+                        }
+            num_ii = 0
+            self.progress(self.all_num[mr_type], num_ii)
+            # 生成log文件
+            f_log_csv = open(''.join((self.config_main['target_path'][0],
+                                      '/LOG_Parse_File_List.csv'
+                                      )), 'a', encoding='utf-8-sig'
+                             )
+            while temp_count:
+                value = queue.get()
+                if value[0] == 'data':
+                    report_time = value[1][0]
+                    table_name = value[1][1]
+                    table_id = value[1][2]
+                    table_value = numpy.array(value[1][3])
                     try:
-                        self.all_list[mr_type][table_name][report_time][table_id] = table_value
+                        self.all_list[mr_type][table_name][report_time][table_id] += table_value
                     except:
                         try:
-                            self.all_list[mr_type][table_name][report_time] = {}
                             self.all_list[mr_type][table_name][report_time][table_id] = table_value
                         except:
-                            self.all_list[mr_type][table_name] = {}
-                            self.all_list[mr_type][table_name][report_time] = {}
-                            self.all_list[mr_type][table_name][report_time][table_id] = table_value
-            elif value[0] == 'prog':
-                num_ii += 1
-                self.progress(self.all_num[mr_type], num_ii)
-                # 记录log
-                for temp_file in value[4]:
-                    f_log_csv.write(value[1])
-                    f_log_csv.write(',')
-                    f_log_csv.write(os.path.split(value[2])[-1])
-                    f_log_csv.write(',')
-                    f_log_csv.write(str(value[3]))
-                    f_log_csv.write(',')
-                    f_log_csv.write(os.path.split(temp_file)[-1])
-                    f_log_csv.write('\n')
-            elif value == 'all_finish':
-                f_log_csv.close()
-                temp_count = 0
-                # return all_list
-        try:
-            print(u'\n>>> {0} 计算及保存...'.format(mr_type))
-            if 'hour' in self.config_main['gather_type']:
-                self.writer(mr_type, 'hour')
-                if 'sum' in self.config_main['gather_type']:
-                    self.gather(mr_type)
+                            try:
+                                self.all_list[mr_type][table_name][report_time] = {}
+                                self.all_list[mr_type][table_name][report_time][table_id] = table_value
+                            except:
+                                self.all_list[mr_type][table_name] = {}
+                                self.all_list[mr_type][table_name][report_time] = {}
+                                self.all_list[mr_type][table_name][report_time][table_id] = table_value
+                elif value[0] == 'prog':
+                    num_ii += 1
+                    self.progress(self.all_num[mr_type], num_ii)
+                    # 记录log
+                    for temp_file in value[4]:
+                        f_log_csv.write(value[1])
+                        f_log_csv.write(',')
+                        f_log_csv.write(os.path.split(value[2])[-1])
+                        f_log_csv.write(',')
+                        f_log_csv.write(str(value[3]))
+                        f_log_csv.write(',')
+                        f_log_csv.write(os.path.split(temp_file)[-1])
+                        f_log_csv.write('\n')
+                elif value == 'all_finish':
+                    f_log_csv.close()
+                    temp_count = 0
+                    # return all_list
+            try:
+                print(u'\n>>> {0} 计算及保存...'.format(mr_type))
+                if 'hour' in self.config_main['gather_type']:
+                    self.writer(mr_type, 'hour')
+                    if 'sum' in self.config_main['gather_type']:
+                        self.gather(mr_type)
+                        self.writer(mr_type, 'sum')
+                elif 'sum' in self.config_main['gather_type']:
                     self.writer(mr_type, 'sum')
-            elif 'sum' in self.config_main['gather_type']:
-                self.writer(mr_type, 'sum')
-            print('>>> {0} 数据处理完毕！'.format(mr_type))
-            print('-' * 26)
-            print('完成！{0}解码结果保存在此文件夹: {1}'.format(mr_type, self.config_main['target_path'][0]))
-            print('-' * 26)
+                print('>>> {0} 数据处理完毕！'.format(mr_type))
+                print('-' * 26)
+                print('完成！{0}解码结果保存在此文件夹: {1}'.format(mr_type, self.config_main['target_path'][0]))
+                print('-' * 26)
+            except:
+                pass
+                # traceback.print_exc()
         except:
-            pass
-            # traceback.print_exc()
+            print('>>listen:{0}<<'.format(os.getpid()))
+            traceback.print_exc()
 
     def writer(self, mr_type, time_type):
         if self.config_main['timing'][0] == '1':
