@@ -87,7 +87,7 @@ def copy_right():
     2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
     2018-9-18 优化数据生成流程，解决数据量过大时保存数据结果出错bug；
     2018-9-20 算法优化；
-    018-9-29 算法优化；2
+    018-9-29 算法优化；
 
 
     ''')
@@ -853,12 +853,23 @@ class Main:
         process_listen = multiprocessing.Process(target=self.listen, args=(process_queue, mr_type,))
         process_listen.start()
 
-        process_pool = multiprocessing.Pool(processes=int(self.config_main['process'][0]))
+        # process_pool = multiprocessing.Pool(processes=int(self.config_main['process'][0]))
+        # for n in self.parse_file_list[mr_type]:
+        #     for o in self.parse_file_list[mr_type][n]:
+        #         process_pool.apply_async(self.child_parse_process, args=(mr_type, n, o, process_queue))
+        # process_pool.close()
+        # process_pool.join()
+
+        processes_num = int(self.config_main['process'][0])
         for n in self.parse_file_list[mr_type]:
-            for o in self.parse_file_list[mr_type][n]:
-                process_pool.apply_async(self.child_parse_process, args=(mr_type, n, o, process_queue))
-        process_pool.close()
-        process_pool.join()
+            temp_run_num = len(self.parse_file_list[mr_type][n])//(processes_num*10)+1
+            for o in range(temp_run_num):
+                temp_parse_list = self.parse_file_list[mr_type][n][o*processes_num*10:(o+1)*processes_num*10]
+                process_pool = multiprocessing.Pool(processes=processes_num)
+                for temp_file in temp_parse_list:
+                    process_pool.apply_async(self.child_parse_process, args=(mr_type, n, temp_file, process_queue))
+                process_pool.close()
+                process_pool.join()
 
         process_queue.put('all_finish')
         process_listen.join()
