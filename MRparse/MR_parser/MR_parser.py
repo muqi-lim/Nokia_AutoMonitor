@@ -85,9 +85,9 @@ def copy_right():
     2018-8-27 修复统计 mro_aoa 表时未生成报表bug；
     2018-9-7 算法优化；
     2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
-    2018-9-18 优化数据生成流程，解决数据量过大时保存数据结果出错bug；
     2018-9-20 算法优化；
-    018-9-29 算法优化；
+    2018-9-29 算法优化；
+    2018-10-28 算法优化,增强程序稳定性；
 
 
     ''')
@@ -206,13 +206,6 @@ class Main:
         if len(self.parse_file_list) != 0:
             if not os.path.isdir(self.config_main['target_path'][0]):
                 os.makedirs(self.config_main['target_path'][0])
-        # 生成log文件
-        f_log_csv = open(''.join((self.config_main['target_path'][0],
-                                  '/LOG_Parse_File_List.csv'
-                                  )), 'w', encoding='utf-8-sig'
-                         )
-        f_log_csv.write('MR_Type,File_Name,Child_File_Num,Child_File_Name\n')
-        f_log_csv.close()
 
     def get_config(self, mr_type):
 
@@ -847,32 +840,54 @@ class Main:
         #                        }
         # temp_i 为文件类型（gz or xml）
         # temp_j 为待处理文件
-        process_manager = multiprocessing.Manager()
-        process_queue = process_manager.Queue()
-
-        process_listen = multiprocessing.Process(target=self.listen, args=(process_queue, mr_type,))
-        process_listen.start()
-
-        # process_pool = multiprocessing.Pool(processes=int(self.config_main['process'][0]))
-        # for n in self.parse_file_list[mr_type]:
-        #     for o in self.parse_file_list[mr_type][n]:
-        #         process_pool.apply_async(self.child_parse_process, args=(mr_type, n, o, process_queue))
-        # process_pool.close()
-        # process_pool.join()
 
         processes_num = int(self.config_main['process'][0])
-        for n in self.parse_file_list[mr_type]:
-            temp_run_num = len(self.parse_file_list[mr_type][n])//(processes_num*10)+1
-            for o in range(temp_run_num):
-                temp_parse_list = self.parse_file_list[mr_type][n][o*processes_num*10:(o+1)*processes_num*10]
-                process_pool = multiprocessing.Pool(processes=processes_num)
-                for temp_file in temp_parse_list:
-                    process_pool.apply_async(self.child_parse_process, args=(mr_type, n, temp_file, process_queue))
-                process_pool.close()
-                process_pool.join()
+        global all_list
+        all_list = {
+            'mrs': {},
+            'mro': {}
+        }
+        # 进度条
+        self.num_ii = 0
+        # for n in self.parse_file_list[mr_type]:
+        #     temp_run_num = len(self.parse_file_list[mr_type][n])//(processes_num*10)+1
+        #     for o in range(temp_run_num):
+        #         temp_parse_list = self.parse_file_list[mr_type][n][o*processes_num*10:(o+1)*processes_num*10]
+        #         process_pool = multiprocessing.Pool(processes=processes_num)
+        #         for temp_file in temp_parse_list:
+        #             process_pool.apply_async(self.child_parse_process, args=(mr_type, n, temp_file),
+        #                                      callback=self.listen)
+        #         process_pool.close()
+        #         process_pool.join()
 
-        process_queue.put('all_finish')
-        process_listen.join()
+        process_pool = multiprocessing.Pool(processes=processes_num)
+        for o in self.parse_file_list[mr_type]:
+            for p in self.parse_file_list[mr_type][o]:
+                process_pool.apply_async(self.child_parse_process, args=(mr_type, o, p),
+                                         callback=self.listen)
+        process_pool.close()
+        process_pool.join()
+
+        # process_queue.put('all_finish')
+        # process_listen.join()
+
+        try:
+            print('\n>>writer:{0}<<'.format(os.getpid()))
+            print(u'\n>>> {0} 计算及保存...'.format(mr_type))
+            if 'hour' in self.config_main['gather_type']:
+                self.writer(mr_type, 'hour')
+                if 'sum' in self.config_main['gather_type']:
+                    self.gather(mr_type)
+                    self.writer(mr_type, 'sum')
+            elif 'sum' in self.config_main['gather_type']:
+                self.writer(mr_type, 'sum')
+            print('>>> {0} 数据处理完毕！'.format(mr_type))
+            print('-' * 26)
+            print('完成！{0}解码结果保存在此文件夹: {1}'.format(mr_type, self.config_main['target_path'][0]))
+            print('-' * 26)
+        except:
+            pass
+            # traceback.print_exc()
 
     def filter(self, file_name, type_filter):
         filter_id = self.config_filter['filter_id']
@@ -895,7 +910,7 @@ class Main:
         else:
             return 0
 
-    def child_parse_process(self, mr_type, file_type, file_name, queue='', ishead=0):
+    def child_parse_process(self, mr_type, file_type, file_name, ishead=0):
 
         """文件格式判断、解压、parse xml"""
         try:
@@ -906,13 +921,13 @@ class Main:
                 try:
                     if self.config_filter['active_filter'] != ['1']:
                         tree = ET.parse(file_name)
-                        self.parser(tree, mr_type, queue, ishead)
+                        self.parser(tree, mr_type, ishead)
                         log_file_child_num += 1
                         log_file_child_list.append(file_name)
                     else:
                         if self.filter(file_name, 'xml') == 1:
                             tree = ET.parse(file_name)
-                            self.parser(tree, mr_type, queue, ishead)
+                            self.parser(tree, mr_type, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
                 except:
@@ -930,13 +945,13 @@ class Main:
                                 if temp_file_suffix == 'gz':
                                     if self.config_filter['active_filter'] != ['1']:
                                         tree = ET.parse(gzip.open(temp_file_tar_f))
-                                        self.parser(tree, mr_type, queue, ishead)
+                                        self.parser(tree, mr_type, ishead)
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                                     else:
                                         if self.filter(temp_file, 'tar_gz') == 1:
                                             tree = ET.parse(gzip.open(temp_file_tar_f))
-                                            self.parser(tree, mr_type, queue, ishead)
+                                            self.parser(tree, mr_type, ishead)
                                             if self.config_filter['extract_source_file'] == ['1']:
                                                 tar_f.extract(temp_file, self.config_main['target_path'][0])
                                             log_file_child_num += 1
@@ -945,13 +960,13 @@ class Main:
                                 elif temp_file_suffix == 'xml':
                                     if self.config_filter['active_filter'] != ['1']:
                                         tree = ET.parse(temp_file_tar_f)
-                                        self.parser(tree, mr_type, queue, ishead)
+                                        self.parser(tree, mr_type, ishead)
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                                     else:
                                         if self.filter(temp_file, 'tar_gz') == 1:
                                             tree = ET.parse(temp_file_tar_f)
-                                            self.parser(tree, mr_type, queue, ishead)
+                                            self.parser(tree, mr_type, ishead)
                                             if self.config_filter['extract_source_file'] == ['1']:
                                                 tar_f.extract(temp_file, self.config_main['target_path'][0])
                                             log_file_child_num += 1
@@ -966,13 +981,13 @@ class Main:
                         gzip_file = gzip.open(file_name)
                         if self.config_filter['active_filter'] != ['1']:
                             tree = ET.parse(gzip_file)
-                            self.parser(tree, mr_type, queue, ishead)
+                            self.parser(tree, mr_type, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
                         else:
                             if self.filter(file_name, 'gz') == 1:
                                 tree = ET.parse(gzip_file)
-                                self.parser(tree, mr_type, queue, ishead)
+                                self.parser(tree, mr_type, ishead)
                                 log_file_child_num += 1
                                 log_file_child_list.append(file_name)
                 except:
@@ -983,16 +998,24 @@ class Main:
             if ishead == 0:
                 type_list = {'mrs': self.temp_mrs_data,
                              'mro': self.temp_mro_data}
-                self.queue_send(queue, type_list[mr_type])
+                try:
+                    return [mr_type,
+                            [
+                                ['data', type_list[mr_type]],
+                                ['prog', mr_type, file_name, log_file_child_num, log_file_child_list]
+                            ]
+                            ]
+                finally:
+                # self.queue_send(queue, type_list[mr_type])
+
                 # 发送进度条及文件名称，为log；
-                # queue.put('prog')
-                queue.put(['prog', mr_type, file_name, log_file_child_num, log_file_child_list])
-                type_list[mr_type] = {}
+                # queue.put(['prog', mr_type, file_name, log_file_child_num, log_file_child_list])
+                    type_list[mr_type] = {}
         except:
             print('parser:{0}<<'.format(os.getpid()))
             traceback.print_exc()
 
-    def parser(self, tree, mr_type, queue, ishead):
+    def parser(self, tree, mr_type, ishead):
         if ishead == 0:
             if mr_type == 'mrs':
                 report_time = self.get_report_time(tree)
@@ -1002,7 +1025,7 @@ class Main:
                         for temp_id in temp_mr_name.iter('object'):
                             temp_mrs_ecid = temp_id.attrib['id']
                             for temp_value in temp_id.iter('v'):
-                                temp_values = numpy.array(list(map(float, temp_value.text.rstrip().split(' '))))
+                                temp_values = numpy.array(list(map(int, temp_value.text.rstrip().split(' '))))
                                 try:
                                     self.temp_mrs_data[report_time][temp_table_name_1][temp_mrs_ecid] += temp_values
                                 except:
@@ -1063,33 +1086,15 @@ class Main:
                             head_temp = smr.text.replace('.', '_').rstrip().split(' ')
                             self.mrs_head[temp_table_name] = head_temp
 
-    @staticmethod
-    def queue_send(queue, data):
-        try:
-            for temp_report_time in data:
-                for temp_table in data[temp_report_time]:
-                    for temp_ecid in data[temp_report_time][temp_table]:
-                        queue.put(['data', [temp_report_time,
-                                            temp_table,
-                                            temp_ecid,
-                                            data[temp_report_time][temp_table][temp_ecid]
-                                            ]
-                                   ]
-                                  )
-        except:
-            print('parser:{0}<<'.format(os.getpid()))
-            print(data)
-            traceback.print_exc()
-
     def gather(self, mr_type):
         gather_data = {'mrs': {},
                        'mro': {}
                        }
         temp_gather_data = {}
         if mr_type == 'mrs':
-            temp_gather_data = self.all_list
+            temp_gather_data = all_list
         elif mr_type == 'mro':
-            temp_gather_data = self.all_list
+            temp_gather_data = all_list
         for temp_table in temp_gather_data[mr_type]:
             # mro_ecid 表不生成小时级，汇总阶段直接删除此表数据
             if temp_table == 'mro_ecid':
@@ -1106,83 +1111,58 @@ class Main:
                             gather_data[mr_type][temp_table]['-'][temp_ecid] = temp_gather_data[
                                 mr_type][temp_table][temp_report_time][temp_ecid]
         if mr_type == 'mrs':
-            self.all_list['mrs'] = gather_data['mrs']
+            all_list['mrs'] = gather_data['mrs']
         elif mr_type == 'mro':
-            self.all_list['mro'] = gather_data['mro']
+            all_list['mro'] = gather_data['mro']
 
-    def listen(self, queue, mr_type):
+    def listen(self, input_value):
         # 表结构
         # 表名:{time:
         #               {ecid:[值1，值2，......]
         #                   }
         #       }
         try:
-            print('>>listen:{0}<<'.format(os.getpid()))
-            temp_count = 1
-            self.all_list = {
-                'mrs': {},
-                'mro': {}
-                        }
-            num_ii = 0
-            self.progress(self.all_num[mr_type], num_ii)
-            # 生成log文件
-            f_log_csv = open(''.join((self.config_main['target_path'][0],
-                                      '/LOG_Parse_File_List.csv'
-                                      )), 'a', encoding='utf-8-sig'
-                             )
-            while temp_count:
-                value = queue.get()
-                if value[0] == 'data':
-                    report_time = value[1][0]
-                    table_name = value[1][1]
-                    table_id = value[1][2]
-                    table_value = numpy.array(value[1][3])
-                    try:
-                        self.all_list[mr_type][table_name][report_time][table_id] += table_value
-                    except:
-                        try:
-                            self.all_list[mr_type][table_name][report_time][table_id] = table_value
-                        except:
-                            try:
-                                self.all_list[mr_type][table_name][report_time] = {}
-                                self.all_list[mr_type][table_name][report_time][table_id] = table_value
-                            except:
-                                self.all_list[mr_type][table_name] = {}
-                                self.all_list[mr_type][table_name][report_time] = {}
-                                self.all_list[mr_type][table_name][report_time][table_id] = table_value
-                elif value[0] == 'prog':
-                    num_ii += 1
-                    self.progress(self.all_num[mr_type], num_ii)
-                    # 记录log
-                    for temp_file in value[4]:
-                        f_log_csv.write(value[1])
-                        f_log_csv.write(',')
-                        f_log_csv.write(os.path.split(value[2])[-1])
-                        f_log_csv.write(',')
-                        f_log_csv.write(str(value[3]))
-                        f_log_csv.write(',')
-                        f_log_csv.write(os.path.split(temp_file)[-1])
-                        f_log_csv.write('\n')
-                elif value == 'all_finish':
-                    f_log_csv.close()
-                    temp_count = 0
-                    # return all_list
-            try:
-                print(u'\n>>> {0} 计算及保存...'.format(mr_type))
-                if 'hour' in self.config_main['gather_type']:
-                    self.writer(mr_type, 'hour')
-                    if 'sum' in self.config_main['gather_type']:
-                        self.gather(mr_type)
-                        self.writer(mr_type, 'sum')
-                elif 'sum' in self.config_main['gather_type']:
-                    self.writer(mr_type, 'sum')
-                print('>>> {0} 数据处理完毕！'.format(mr_type))
-                print('-' * 26)
-                print('完成！{0}解码结果保存在此文件夹: {1}'.format(mr_type, self.config_main['target_path'][0]))
-                print('-' * 26)
-            except:
-                pass
-                # traceback.print_exc()
+            mr_type = input_value[0]
+            for temp_value_type in input_value[1]:
+                if temp_value_type[0] == 'data':
+                    for report_time in temp_value_type[1]:
+                        for table_name in temp_value_type[1][report_time]:
+                            for table_id in temp_value_type[1][report_time][table_name]:
+                                table_value = temp_value_type[1][report_time][table_name][table_id]
+                                # report_time = value[1][0]
+                                # table_name = value[1][1]
+                                # table_id = value[1][2]
+                                # table_value = numpy.array(value[1][3])
+
+                                # if mr_type in self.all_list:
+                                #     if table_name in self.all_list[mr_type]:
+                                #         if report_time in self.all_list[mr_type][table_name]:
+                                #             if table_id in self.all_list[mr_type][table_name][report_time]:
+                                #                 self.all_list[mr_type][table_name][report_time][table_id] += table_value
+                                #             else:
+                                #                 self.all_list[mr_type][table_name][report_time][table_id] = table_value
+                                #         else:
+                                #             self.all_list[mr_type][table_name][report_time] = {table_id: table_value}
+                                #     else:
+                                #         self.all_list[mr_type][table_name] = {report_time: {table_id: table_value}}
+                                # else:
+                                #     self.all_list[mr_type] = {table_name: {report_time: {table_id: table_value}}}
+
+                                try:
+                                    all_list[mr_type][table_name][report_time][table_id] += table_value
+                                except:
+                                    try:
+                                        all_list[mr_type][table_name][report_time][table_id] = table_value
+                                    except:
+                                        try:
+                                            all_list[mr_type][table_name][report_time] = {table_id: table_value}
+                                        except:
+                                            all_list[mr_type][table_name] = {report_time: {table_id: table_value}}
+
+                elif temp_value_type[0] == 'prog':
+                    self.num_ii += 1
+                    self.progress(self.all_num[mr_type], self.num_ii)
+
         except:
             print('>>listen:{0}<<'.format(os.getpid()))
             traceback.print_exc()
@@ -1195,7 +1175,7 @@ class Main:
             temp_day_head = ''
             temp_day = '-'
         if mr_type == 'mrs':
-            for table_mrs in self.all_list['mrs']:
+            for table_mrs in all_list['mrs']:
                 with open(os.path.join(self.config_main['target_path'][0],
                                        '{0}{1}_{2}.csv'.format(table_mrs, temp_day_head, time_type)), 'w',
                           newline='') as csvfile:
@@ -1204,14 +1184,14 @@ class Main:
                         writer.writerow(['DAY', 'TIME', 'ECID', 'ENB_ID', 'ENB_CELLID', 'MR覆盖率（RSRP>=-110)',
                                          'RSRP>=-110计数器', 'ALL计数器'] + self.mrs_head[table_mrs])
                         # print(self.mrs_data_data)
-                        for temp_report_time in self.all_list['mrs'][table_mrs]:
-                            for temp_ecid in self.all_list['mrs'][table_mrs][temp_report_time]:
+                        for temp_report_time in all_list['mrs'][table_mrs]:
+                            for temp_ecid in all_list['mrs'][table_mrs][temp_report_time]:
                                 enb_cellid = '_'.join((str(int(temp_ecid) // 256), str(int(temp_ecid) % 256)))
                                 numerator = numpy.sum(
-                                    self.all_list['mrs'][table_mrs][temp_report_time][temp_ecid][7:]
+                                    all_list['mrs'][table_mrs][temp_report_time][temp_ecid][7:]
                                 )
                                 denominator = numpy.sum(
-                                    self.all_list['mrs'][table_mrs][temp_report_time][temp_ecid]
+                                    all_list['mrs'][table_mrs][temp_report_time][temp_ecid]
                                 )
                                 if denominator == 0:
                                     range_mrs = '-'
@@ -1219,20 +1199,20 @@ class Main:
                                     range_mrs = round(numerator / denominator * 100, 2)
                                 writer.writerow([temp_day, temp_report_time, temp_ecid, int(temp_ecid) // 256,
                                                  enb_cellid, range_mrs, numerator, denominator] + list(
-                                    self.all_list['mrs'][table_mrs][temp_report_time][temp_ecid]))
+                                    all_list['mrs'][table_mrs][temp_report_time][temp_ecid]))
                     else:
                         writer.writerow(['DAY', 'TIME', 'ECID', ] + self.mrs_head[table_mrs])
                         # print(self.mrs_data_data)
-                        for temp_report_time in self.all_list['mrs'][table_mrs]:
-                            for temp_ecid in self.all_list['mrs'][table_mrs][temp_report_time]:
+                        for temp_report_time in all_list['mrs'][table_mrs]:
+                            for temp_ecid in all_list['mrs'][table_mrs][temp_report_time]:
                                 writer.writerow([temp_day,
                                                  temp_report_time,
                                                  temp_ecid,
                                                  ] + list(
-                                    self.all_list['mrs'][table_mrs][temp_report_time][temp_ecid]))
+                                    all_list['mrs'][table_mrs][temp_report_time][temp_ecid]))
         elif mr_type == 'mro':
 
-            for table in self.all_list['mro']:
+            for table in all_list['mro']:
                 if table == 'mro_main':
                     with open(os.path.join(self.config_main['target_path'][0],
                                            '{0}{1}_{2}.csv'.format(table,
@@ -1245,9 +1225,9 @@ class Main:
                                          'MR.LteScPUSCHPRBNum', 'MR.LteScPDSCHPRBNum', 's_samplint',
                                          'RSRP>=-110采样点', 'MR覆盖率(RSRP>=-110)',
                                          'CMCC重叠覆盖采样点', 'CMCC同频重叠覆盖率'))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for table_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][table_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for table_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][table_id]
                                 if temp_value[8] != 0:
                                     temp_value_1 = temp_value[0:8] / temp_value[8]
                                     temp_value_1[0] = temp_value_1[0] - 140
@@ -1285,9 +1265,9 @@ class Main:
                                          'Ncrsrp', ' N_Samplint', '<-10db', '-10db', '-9db', '-8db', '-7db',
                                          '-6db', '-5db', '-4db', '-3db', '-2db', '-1db', '0db', '1db', '2db', '3db',
                                          '4db', '5db', ' 6db', '7db', '8db', '9db', '10db', '>10db'))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for table_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][table_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for table_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][table_id]
                                 if temp_value[3] != 0:
                                     temp_value_1 = temp_value[0:3] / temp_value[3]
                                 else:
@@ -1313,8 +1293,8 @@ class Main:
                             'ECI_ECI', 'S_ENBID', 'S_CELLID', 'S_PCI', 'S_EARFCN', 'A_ENBID', 'A_CELLID', 'A_PCI',
                             'A_EARFCN', 'distance', 'total', 'GE-10db', 'GE-6db', 'NbrAvg', 'NbrMax', 'NbrMin'
                         ))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for table_id in self.all_list['mro'][table][temp_report_time]:
+                        for temp_report_time in all_list['mro'][table]:
+                            for table_id in all_list['mro'][table][temp_report_time]:
                                 temp_id = table_id.split('_')
                                 temp_senbid = str(int(temp_id[0]) // 256)
                                 temp_scellid = str(int(temp_id[0]) % 256)
@@ -1332,7 +1312,7 @@ class Main:
                                     # N_enbid = '-'
                                     # N_cellid = '-'
                                 temp_ECI_ECI = '_'.join((temp_id[0], N_ECI))
-                                temp_value = self.all_list['mro'][table][temp_report_time][table_id]
+                                temp_value = all_list['mro'][table][temp_report_time][table_id]
                                 if temp_value[3] != 0:
                                     temp_value_1 = temp_value[2] // temp_value[3]
                                 else:
@@ -1386,9 +1366,9 @@ class Main:
                                              'MR_RSRP_45', 'MR_RSRP_46', 'MR_RSRP_47',
                                              'ue方位角偏差超过门限计数器', 'ue方位角偏差超过门限占比', 'ue平均方位角'))
 
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][ecid_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][ecid_id]
                                 temp_value_1 = sum(temp_value[7:48])
                                 temp_value_2 = sum(temp_value[0:48])
                                 if temp_value_2 != 0:
@@ -1422,10 +1402,10 @@ class Main:
                         writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID', 'CELL_NAME', 'lon',
                                          'lat', 'SC_RSRP', 'LteScRSRQ', 'LteScSinrUL', 'LteScTadv', 'SAMPLES',
                                          'ue所在位置超出小区方向', 'ue方向角'))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
                                 temp_value = ecid_id.split('_')
-                                temp_value_num = list(self.all_list['mro'][table][temp_report_time][ecid_id])
+                                temp_value_num = list(all_list['mro'][table][temp_report_time][ecid_id])
                                 temp_enbid = str(int(temp_value[0]) // 256)
                                 temp_enb_cellid = '_'.join((str(int(temp_value[0]) // 256),
                                                             str(int(temp_value[0]) % 256)))
@@ -1449,11 +1429,11 @@ class Main:
                         writer = csv.writer(csvfile)
                         writer.writerow(('Report_Time', 'UELongitude', 'UELatitude', 'EARFCN', 'ECID', 'S_RSRP',
                                          '重叠覆盖邻区数','点出现次数'))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
                                 temp_value = ecid_id.split('_')
                                 writer.writerow(
-                                    [temp_report_time, ] + temp_value + [self.all_list['mro'][table][temp_report_time][ecid_id],]
+                                    [temp_report_time, ] + temp_value + [all_list['mro'][table][temp_report_time][ecid_id],]
                                 )
                 elif table == 'mro_aoa':
                     with open(os.path.join(self.config_main['target_path'][0],
@@ -1474,9 +1454,9 @@ class Main:
                                          'MR_AOA_54', 'MR_AOA_55', 'MR_AOA_56', 'MR_AOA_57', 'MR_AOA_58', 'MR_AOA_59',
                                          'MR_AOA_60', 'MR_AOA_61', 'MR_AOA_62', 'MR_AOA_63', 'MR_AOA_64', 'MR_AOA_65',
                                          'MR_AOA_66', 'MR_AOA_67', 'MR_AOA_68', 'MR_AOA_69', 'MR_AOA_70', 'MR_AOA_71'))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][ecid_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][ecid_id]
                                 temp_enbid = str(int(ecid_id) // 256)
                                 temp_enb_cellid = '_'.join((str(int(ecid_id) // 256), str(int(ecid_id) % 256)))
                                 writer.writerow([temp_day, temp_report_time, ecid_id, temp_enbid, temp_enb_cellid
@@ -1507,9 +1487,9 @@ class Main:
                              'n_RSRP_31', 'n_RSRP_32', 'n_RSRP_33', 'n_RSRP_34', 'n_RSRP_35', 'n_RSRP_36', 'n_RSRP_37',
                              'n_RSRP_38', 'n_RSRP_39', 'n_RSRP_40', 'n_RSRP_41', 'n_RSRP_42', 'n_RSRP_43', 'n_RSRP_44',
                              'n_RSRP_45', 'n_RSRP_46', 'n_RSRP_47'])
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][ecid_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][ecid_id]
                                 s_temp_value_1 = sum(temp_value[7:48])
                                 s_temp_value_2 = sum(temp_value[0:48])
                                 if s_temp_value_2 != 0:
@@ -1558,9 +1538,9 @@ class Main:
                              'n_RSRP_31', 'n_RSRP_32', 'n_RSRP_33', 'n_RSRP_34', 'n_RSRP_35', 'n_RSRP_36', 'n_RSRP_37',
                              'n_RSRP_38', 'n_RSRP_39', 'n_RSRP_40', 'n_RSRP_41', 'n_RSRP_42', 'n_RSRP_43', 'n_RSRP_44',
                              'n_RSRP_45', 'n_RSRP_46', 'n_RSRP_47'])
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][ecid_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][ecid_id]
                                 s_temp_value_1 = sum(temp_value[7:48])
                                 s_temp_value_2 = sum(temp_value[0:48])
                                 if s_temp_value_2 != 0:
@@ -1591,9 +1571,9 @@ class Main:
                         writer.writerow(('DAY', 'TIME', 'ECID', 'ENBID', 'ENB_CELLID',
                                          '0_adj_report_num', '1_adj_report_num', '2_adj_report_num',
                                          '3_adj_report_num', 'more_than_3_adj_report_num'))
-                        for temp_report_time in self.all_list['mro'][table]:
-                            for ecid_id in self.all_list['mro'][table][temp_report_time]:
-                                temp_value = self.all_list['mro'][table][temp_report_time][ecid_id]
+                        for temp_report_time in all_list['mro'][table]:
+                            for ecid_id in all_list['mro'][table][temp_report_time]:
+                                temp_value = all_list['mro'][table][temp_report_time][ecid_id]
                                 temp_enbid = str(int(ecid_id) // 256)
                                 temp_enb_cellid = '_'.join((str(int(ecid_id) // 256), str(int(ecid_id) % 256)))
                                 writer.writerow([temp_day, temp_report_time, ecid_id, temp_enbid, temp_enb_cellid
@@ -1606,7 +1586,7 @@ class Main:
 
 
 if __name__ == '__main__':
-
+    print('>>Main:{0}<<'.format(os.getpid()))
     main_path = os.path.join(os.path.split(os.path.abspath(sys.argv[0]))[0], '_config')
     cf = configparser.ConfigParser()
     cf.read(''.join((main_path, '\\', 'config.ini')), encoding='utf-8-SIG')
