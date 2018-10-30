@@ -83,10 +83,7 @@ def copy_right():
     2018-8-10 新增liscense认证方式认证；
     2018-8-27 修复友商竞对覆盖率统计bug；
     2018-8-27 修复统计 mro_aoa 表时未生成报表bug；
-    2018-9-7 算法优化；
     2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
-    2018-9-20 算法优化；
-    2018-9-29 算法优化；
     2018-10-28 算法优化,增强程序稳定性；
 
 
@@ -1129,25 +1126,6 @@ class Main:
                         for table_name in temp_value_type[1][report_time]:
                             for table_id in temp_value_type[1][report_time][table_name]:
                                 table_value = temp_value_type[1][report_time][table_name][table_id]
-                                # report_time = value[1][0]
-                                # table_name = value[1][1]
-                                # table_id = value[1][2]
-                                # table_value = numpy.array(value[1][3])
-
-                                # if mr_type in self.all_list:
-                                #     if table_name in self.all_list[mr_type]:
-                                #         if report_time in self.all_list[mr_type][table_name]:
-                                #             if table_id in self.all_list[mr_type][table_name][report_time]:
-                                #                 self.all_list[mr_type][table_name][report_time][table_id] += table_value
-                                #             else:
-                                #                 self.all_list[mr_type][table_name][report_time][table_id] = table_value
-                                #         else:
-                                #             self.all_list[mr_type][table_name][report_time] = {table_id: table_value}
-                                #     else:
-                                #         self.all_list[mr_type][table_name] = {report_time: {table_id: table_value}}
-                                # else:
-                                #     self.all_list[mr_type] = {table_name: {report_time: {table_id: table_value}}}
-
                                 try:
                                     all_list[mr_type][table_name][report_time][table_id] += table_value
                                 except:
@@ -1202,7 +1180,6 @@ class Main:
                                     all_list['mrs'][table_mrs][temp_report_time][temp_ecid]))
                     else:
                         writer.writerow(['DAY', 'TIME', 'ECID', ] + self.mrs_head[table_mrs])
-                        # print(self.mrs_data_data)
                         for temp_report_time in all_list['mrs'][table_mrs]:
                             for temp_ecid in all_list['mrs'][table_mrs][temp_report_time]:
                                 writer.writerow([temp_day,
