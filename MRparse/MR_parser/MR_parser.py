@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from lxml import etree
 import numpy
 import configparser
 import os
@@ -917,13 +918,15 @@ class Main:
             if file_type == 'xml':
                 try:
                     if self.config_filter['active_filter'] != ['1']:
-                        tree = ET.parse(file_name)
+                        # tree = ET.parse(file_name)
+                        tree = etree.parse(file_name)
                         self.parser(tree, mr_type, ishead)
                         log_file_child_num += 1
                         log_file_child_list.append(file_name)
                     else:
                         if self.filter(file_name, 'xml') == 1:
-                            tree = ET.parse(file_name)
+                            # tree = ET.parse(file_name)
+                            tree = etree.parse(file_name)
                             self.parser(tree, mr_type, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
@@ -941,13 +944,15 @@ class Main:
                                 temp_file_suffix = temp_file.split('.')[-1].lower()
                                 if temp_file_suffix == 'gz':
                                     if self.config_filter['active_filter'] != ['1']:
-                                        tree = ET.parse(gzip.open(temp_file_tar_f))
+                                        # tree = ET.parse(gzip.open(temp_file_tar_f))
+                                        tree = etree.parse(gzip.open(temp_file_tar_f))
                                         self.parser(tree, mr_type, ishead)
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                                     else:
                                         if self.filter(temp_file, 'tar_gz') == 1:
-                                            tree = ET.parse(gzip.open(temp_file_tar_f))
+                                            # tree = ET.parse(gzip.open(temp_file_tar_f))
+                                            tree = etree.parse(gzip.open(temp_file_tar_f))
                                             self.parser(tree, mr_type, ishead)
                                             if self.config_filter['extract_source_file'] == ['1']:
                                                 tar_f.extract(temp_file, self.config_main['target_path'][0])
@@ -956,13 +961,15 @@ class Main:
 
                                 elif temp_file_suffix == 'xml':
                                     if self.config_filter['active_filter'] != ['1']:
-                                        tree = ET.parse(temp_file_tar_f)
+                                        # tree = ET.parse(temp_file_tar_f)
+                                        tree = etree.parse(temp_file_tar_f)
                                         self.parser(tree, mr_type, ishead)
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                                     else:
                                         if self.filter(temp_file, 'tar_gz') == 1:
-                                            tree = ET.parse(temp_file_tar_f)
+                                            tree = etree.parse(temp_file_tar_f)
+                                            # tree = ET.parse(temp_file_tar_f)
                                             self.parser(tree, mr_type, ishead)
                                             if self.config_filter['extract_source_file'] == ['1']:
                                                 tar_f.extract(temp_file, self.config_main['target_path'][0])
@@ -977,13 +984,15 @@ class Main:
                         # traceback.print_exc()
                         gzip_file = gzip.open(file_name)
                         if self.config_filter['active_filter'] != ['1']:
-                            tree = ET.parse(gzip_file)
+                            # tree = ET.parse(gzip_file)
+                            tree = etree.XML(gzip_file)
                             self.parser(tree, mr_type, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
                         else:
                             if self.filter(file_name, 'gz') == 1:
-                                tree = ET.parse(gzip_file)
+                                # tree = ET.parse(gzip_file)
+                                tree = etree.parse(gzip_file)
                                 self.parser(tree, mr_type, ishead)
                                 log_file_child_num += 1
                                 log_file_child_list.append(file_name)
