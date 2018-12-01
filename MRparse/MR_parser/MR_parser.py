@@ -19,8 +19,33 @@ import openpyxl
 from geographiclib.geodesic import Geodesic
 import base64
 import pyDes
+import cProfile
+import pstats
 # import pyproj
 
+
+def do_cprofile(filename):
+    """
+    Decorator for function profiling.
+    """
+    def wrapper(func):
+        def profiled_func(*args, **kwargs):
+            # Flag for do profiling or not.
+            DO_PROF = os.getenv("PROFILING")
+            if DO_PROF:
+                profile = cProfile.Profile()
+                profile.enable()
+                result = func(*args, **kwargs)
+                profile.disable()
+                # Sort stat by internal time.
+                sortby = "tottime"
+                ps = pstats.Stats(profile).sort_stats(sortby)
+                ps.dump_stats(filename)
+            else:
+                result = func(*args, **kwargs)
+            return result
+        return profiled_func
+    return wrapper
 
 def copy_right():
     logging.info('\n')
@@ -86,6 +111,7 @@ def copy_right():
     2018-8-27 修复统计 mro_aoa 表时未生成报表bug；
     2018-9-17 算法优化;添加激活文件过滤时，是否提取符合过滤条件的文件字段；
     2018-10-28 算法优化,增强程序稳定性；
+    2018-11-7 算法优化,提高解析效率；
 
 
     ''')
@@ -423,7 +449,7 @@ class Main:
             # cmcc重叠覆盖率采集数计数器
             overlap_times = 0
             temp_mro_main = []
-            for value in mro_object.iter('v'):
+            for value in mro_object:
                 temp_value = value.text.replace('NIL', '0').split()
                 if temp_id == 1:
                     ecid_earfcn_pci = '_'.join((ecid, temp_value[7], temp_value[8]))
@@ -481,7 +507,7 @@ class Main:
             # traceback.print_exc()
 
     def mro_ecid(self, object_mro, report_time, enbid):
-        for value in object_mro.iter('v'):
+        for value in object_mro:
             temp_value = value.text.replace('NIL', '0').split()
             # ecid1 = str(int(enbid) * 256 + int(object_mro.attrib['id']) % 256)
             ecid1 = object_mro.attrib['id']
@@ -528,7 +554,7 @@ class Main:
     def mro_rsrp(self, mro_object, report_time, enbid):
         # ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
         ecid = mro_object.attrib['id']
-        for value in mro_object.iter('v'):
+        for value in mro_object:
             temp_value = value.text.split()
             # print(temp_value)
             temp_mro_rsrp = numpy.zeros(48)
@@ -558,7 +584,7 @@ class Main:
             'mdt': []
         }
         temp_counter = 0
-        for value in mro_object.iter('v'):
+        for value in mro_object:
             temp_value = value.text.split()
             if temp_counter == 0:
                 try:
@@ -691,7 +717,7 @@ class Main:
         try:
             # ecid = int(enbid)*256 + int(mro_object.attrib['id']) % 256
             ecid = mro_object.attrib['id']
-            for value in mro_object.iter('v'):
+            for value in mro_object:
                 temp_value = value.text.split()
                 temp_mro_aoa = numpy.zeros(72)
                 # temp_mro_aoa = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -719,7 +745,7 @@ class Main:
         ecid = mro_object.attrib['id']
         temp_value_earfcn = 0
         temp_value_num = numpy.zeros(5)
-        for value in mro_object.iter('v'):
+        for value in mro_object:
             temp_value = value.text.rstrip().split(' ')
             if temp_value[11] != 'NIL':
                 temp_value_earfcn += 1
@@ -746,7 +772,7 @@ class Main:
         temp_value_list = []
         temp_mro_earfcn = numpy.zeros(96)
         temp_mro_earfcn_operator = numpy.zeros(96)
-        for value in object_mro.iter('v'):
+        for value in object_mro:
             temp_value = value.text.split()
             if temp_value[11] != 'NIL':
                 temp_value_list.append(int(temp_value[9]))
@@ -920,6 +946,7 @@ class Main:
                     if self.config_filter['active_filter'] != ['1']:
                         # tree = ET.parse(file_name)
                         tree = etree.parse(file_name)
+                        tree = tree.getroot()
                         self.parser(tree, mr_type, ishead)
                         log_file_child_num += 1
                         log_file_child_list.append(file_name)
@@ -927,6 +954,7 @@ class Main:
                         if self.filter(file_name, 'xml') == 1:
                             # tree = ET.parse(file_name)
                             tree = etree.parse(file_name)
+                            tree = tree.getroot()
                             self.parser(tree, mr_type, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
@@ -946,6 +974,7 @@ class Main:
                                     if self.config_filter['active_filter'] != ['1']:
                                         # tree = ET.parse(gzip.open(temp_file_tar_f))
                                         tree = etree.parse(gzip.open(temp_file_tar_f))
+                                        tree = tree.getroot()
                                         self.parser(tree, mr_type, ishead)
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
@@ -953,6 +982,7 @@ class Main:
                                         if self.filter(temp_file, 'tar_gz') == 1:
                                             # tree = ET.parse(gzip.open(temp_file_tar_f))
                                             tree = etree.parse(gzip.open(temp_file_tar_f))
+                                            tree = tree.getroot()
                                             self.parser(tree, mr_type, ishead)
                                             if self.config_filter['extract_source_file'] == ['1']:
                                                 tar_f.extract(temp_file, self.config_main['target_path'][0])
@@ -963,12 +993,14 @@ class Main:
                                     if self.config_filter['active_filter'] != ['1']:
                                         # tree = ET.parse(temp_file_tar_f)
                                         tree = etree.parse(temp_file_tar_f)
+                                        tree = tree.getroot()
                                         self.parser(tree, mr_type, ishead)
                                         log_file_child_num += 1
                                         log_file_child_list.append(temp_file)
                                     else:
                                         if self.filter(temp_file, 'tar_gz') == 1:
                                             tree = etree.parse(temp_file_tar_f)
+                                            tree = tree.getroot()
                                             # tree = ET.parse(temp_file_tar_f)
                                             self.parser(tree, mr_type, ishead)
                                             if self.config_filter['extract_source_file'] == ['1']:
@@ -985,7 +1017,8 @@ class Main:
                         gzip_file = gzip.open(file_name)
                         if self.config_filter['active_filter'] != ['1']:
                             # tree = ET.parse(gzip_file)
-                            tree = etree.XML(gzip_file)
+                            tree = etree.parse(gzip_file)
+                            tree = tree.getroot()
                             self.parser(tree, mr_type, ishead)
                             log_file_child_num += 1
                             log_file_child_list.append(file_name)
@@ -993,6 +1026,7 @@ class Main:
                             if self.filter(file_name, 'gz') == 1:
                                 # tree = ET.parse(gzip_file)
                                 tree = etree.parse(gzip_file)
+                                tree = tree.getroot()
                                 self.parser(tree, mr_type, ishead)
                                 log_file_child_num += 1
                                 log_file_child_list.append(file_name)
@@ -1024,29 +1058,69 @@ class Main:
     def parser(self, tree, mr_type, ishead):
         if ishead == 0:
             if mr_type == 'mrs':
-                report_time = self.get_report_time(tree)
-                for temp_mr_name in tree.iter('measurement'):
-                    temp_table_name_1 = temp_mr_name.attrib['mrName']
-                    if temp_table_name_1 in self.mrs_parse_sheet:
-                        for temp_id in temp_mr_name.iter('object'):
-                            temp_mrs_ecid = temp_id.attrib['id']
-                            for temp_value in temp_id.iter('v'):
-                                temp_values = numpy.array(list(map(int, temp_value.text.rstrip().split(' '))))
-                                try:
-                                    self.temp_mrs_data[report_time][temp_table_name_1][temp_mrs_ecid] += temp_values
-                                except:
-                                    try:
-                                        self.temp_mrs_data[report_time][temp_table_name_1][temp_mrs_ecid] = temp_values
-                                    except:
-                                        try:
-                                            self.temp_mrs_data[report_time][temp_table_name_1] = {}
-                                            self.temp_mrs_data[report_time][temp_table_name_1][
-                                                temp_mrs_ecid] = temp_values
-                                        except:
-                                            self.temp_mrs_data[report_time] = {}
-                                            self.temp_mrs_data[report_time][temp_table_name_1] = {}
-                                            self.temp_mrs_data[report_time][temp_table_name_1][
-                                                temp_mrs_ecid] = temp_values
+                report_time = '-'
+                for temp_start in tree:
+                    if temp_start.tag == 'fileHeader':
+                        if 'hour' in self.config_main['gather_type']:
+                            report_time = temp_start.attrib['startTime'][:temp_start.attrib['startTime'].find(':')]
+                    elif temp_start.tag == 'eNB':
+                        # enbid = temp_start.attrib['id']
+                        for temp_measurement in temp_start:
+                            if temp_measurement.tag == 'measurement':
+                                temp_table_name_1 = temp_measurement.attrib['mrName']
+                                if temp_table_name_1 in self.mrs_parse_sheet:
+                                    for temp_object in temp_measurement:
+                                        temp_tag = temp_object.tag
+                                        # if temp_tag == 'smr':
+                                        #     head_temp = temp_object.text.replace('.', '_').rstrip().split(' ')
+                                        #     if head_temp[0] != 'MR_LteScRSRP':
+                                        #         break
+                                        if temp_tag == 'object':
+                                            temp_mrs_ecid = temp_object.attrib['id']
+                                            for temp_value in temp_object:
+                                                temp_values = numpy.array(
+                                                    list(map(int, temp_value.text.rstrip().split(' '))))
+                                                try:
+                                                    self.temp_mrs_data[report_time][temp_table_name_1][
+                                                        temp_mrs_ecid] += temp_values
+                                                except:
+                                                    try:
+                                                        self.temp_mrs_data[report_time][temp_table_name_1][
+                                                            temp_mrs_ecid] = temp_values
+                                                    except:
+                                                        try:
+                                                            self.temp_mrs_data[report_time][temp_table_name_1] = {}
+                                                            self.temp_mrs_data[report_time][temp_table_name_1][
+                                                                temp_mrs_ecid] = temp_values
+                                                        except:
+                                                            self.temp_mrs_data[report_time] = {}
+                                                            self.temp_mrs_data[report_time][temp_table_name_1] = {}
+                                                            self.temp_mrs_data[report_time][temp_table_name_1][
+                                                                temp_mrs_ecid] = temp_values
+
+                # report_time = self.get_report_time(tree)
+                # for temp_mr_name in tree.iter('measurement'):
+                #     temp_table_name_1 = temp_mr_name.attrib['mrName']
+                #     if temp_table_name_1 in self.mrs_parse_sheet:
+                #         for temp_id in temp_mr_name.iter('object'):
+                #             temp_mrs_ecid = temp_id.attrib['id']
+                #             for temp_value in temp_id.iter('v'):
+                #                 temp_values = numpy.array(list(map(int, temp_value.text.rstrip().split(' '))))
+                #                 try:
+                #                     self.temp_mrs_data[report_time][temp_table_name_1][temp_mrs_ecid] += temp_values
+                #                 except:
+                #                     try:
+                #                         self.temp_mrs_data[report_time][temp_table_name_1][temp_mrs_ecid] = temp_values
+                #                     except:
+                #                         try:
+                #                             self.temp_mrs_data[report_time][temp_table_name_1] = {}
+                #                             self.temp_mrs_data[report_time][temp_table_name_1][
+                #                                 temp_mrs_ecid] = temp_values
+                #                         except:
+                #                             self.temp_mrs_data[report_time] = {}
+                #                             self.temp_mrs_data[report_time][temp_table_name_1] = {}
+                #                             self.temp_mrs_data[report_time][temp_table_name_1][
+                #                                 temp_mrs_ecid] = temp_values
 
             elif mr_type == 'mro':
                 table_list = {'mro_main': self.mro_main,
@@ -1057,20 +1131,43 @@ class Main:
                               'mro_earfcn': self.mro_earfcn,
                               'mro_report_num': self.mro_report,
                               }
-                report_time = self.get_report_time(tree)
-                enbid = self.get_enbid(tree)
-                for measurement in tree.iter('measurement'):
-                    for smr in measurement.iter('smr'):
-                        head_temp = smr.text.replace('.', '_').rstrip().split(' ')
-                        if head_temp[0] == 'MR_LteScRSRP':
-                            for object_mro in measurement.iter('object'):
-                                # 分别生成需要的mro表
-                                for table_temp in self.config_mro['mro_parse_sheet']:
-                                    if table_temp != 'mro_ecid':
-                                        table_list[table_temp](object_mro, report_time, enbid)
-                                    else:
-                                        table_list[table_temp](object_mro, '-', enbid)
-                            break
+                # report_time = self.get_report_time(tree)
+                # enbid = self.get_enbid(tree)
+                try:
+                    report_time = '-'
+                    for temp_start in tree:
+                        if temp_start.tag == 'fileHeader':
+                            if 'hour' in self.config_main['gather_type']:
+                                report_time = temp_start.attrib['startTime'][:temp_start.attrib['startTime'].find(':')]
+                        elif temp_start.tag == 'eNB':
+                            enbid = temp_start.attrib['id']
+                            for temp_measurement in temp_start:
+                                if temp_measurement.tag == 'measurement':
+                                    for temp_object in temp_measurement:
+                                        temp_tag = temp_object.tag
+                                        if temp_tag == 'smr':
+                                            head_temp = temp_object.text.replace('.', '_').rstrip().split(' ')
+                                            if head_temp[0] != 'MR_LteScRSRP':
+                                                break
+                                        elif temp_tag == 'object':
+                                            for table_temp in self.config_mro['mro_parse_sheet']:
+                                                if table_temp != 'mro_ecid':
+                                                    table_list[table_temp](temp_object, report_time, enbid)
+                                                else:
+                                                    table_list[table_temp](temp_object, '-', enbid)
+                except:
+                    traceback.print_exc()
+                                    # for smr in measurement.iter('smr'):
+                                    #     head_temp = smr.text.replace('.', '_').rstrip().split(' ')
+                                    #     if head_temp[0] == 'MR_LteScRSRP':
+                                    #         for object_mro in measurement.iter('object'):
+                                    #             # 分别生成需要的mro表
+                                    #             for table_temp in self.config_mro['mro_parse_sheet']:
+                                    #                 if table_temp != 'mro_ecid':
+                                    #                     table_list[table_temp](object_mro, report_time, enbid)
+                                    #                 else:
+                                    #                     table_list[table_temp](object_mro, '-', enbid)
+                                    #         break
 
         elif ishead == 1:
             # 获取需处理表名
@@ -1197,7 +1294,6 @@ class Main:
                                                  ] + list(
                                     all_list['mrs'][table_mrs][temp_report_time][temp_ecid]))
         elif mr_type == 'mro':
-
             for table in all_list['mro']:
                 if table == 'mro_main':
                     with open(os.path.join(self.config_main['target_path'][0],
